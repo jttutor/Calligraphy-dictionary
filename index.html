@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>兆婷藝術學院 · 書法比賽管理系統</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="theme-color" content="#37352f" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="書法系統" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="application-name" content="書法系統" />
+<style>
+  /* ===== Notion-like styling ===== */
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f7f6f3;
+    --bg-hover: #f1f1ef;
+    --text: #37352f;
+    --text-soft: #787774;
+    --text-faint: #9b9a97;
+    --border: #e9e9e7;
+    --border-strong: #d3d2cf;
+    --accent: #2383e2;
+    --accent-soft: #e7f3fb;
+    --danger: #e03e3e;
+    --danger-soft: #fbe4e4;
+    --success: #0f7b6c;
+    --success-soft: #ddedea;
+    --warn-bg: #fdecc8;
+    --warn-text: #b07b29;
+    --radius: 6px;
+    --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.05);
+    --shadow-md: 0 4px 12px rgba(15, 15, 15, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+                 "Microsoft JhengHei", "Heiti TC", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== Top bar ===== */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 32px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    padding-left: calc(32px + env(safe-area-inset-left));
+    padding-right: calc(32px + env(safe-area-inset-right));
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .footer-hint {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 24px; }
+  .brand {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .brand-sub {
+    color: var(--text-faint);
+    font-size: 13px;
+    margin-left: 8px;
+  }
+  .tabs { display: flex; gap: 4px; }
+  .tab {
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    color: var(--text-soft);
+    font-size: 14px;
+    user-select: none;
+    transition: background 0.1s ease;
+  }
+  .tab:hover { background: var(--bg-hover); }
+  .tab.active { background: var(--bg-soft); color: var(--text); font-weight: 500; }
+  .topbar-right { display: flex; gap: 6px; }
+
+  /* ===== Buttons ===== */
+  button, .btn {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s ease;
+    line-height: 1.4;
+  }
+  button:hover, .btn:hover { background: var(--bg-hover); }
+  button.primary, .btn.primary {
+    background: var(--text);
+    color: #fff;
+    border-color: var(--text);
+  }
+  button.primary:hover, .btn.primary:hover { background: #1f1e1a; }
+  button.danger, .btn.danger {
+    color: var(--danger);
+    border-color: var(--border);
+  }
+  button.danger:hover, .btn.danger:hover { background: var(--danger-soft); }
+  button.ghost, .btn.ghost {
+    border-color: transparent;
+    color: var(--text-soft);
+    padding: 4px 8px;
+  }
+  button.ghost:hover, .btn.ghost:hover { background: var(--bg-hover); color: var(--text); }
+  button.sm { padding: 4px 10px; font-size: 13px; }
+
+  /* ===== Layout ===== */
+  .container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .page-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .page-subtitle {
+    color: var(--text-soft);
+    font-size: 14px;
+    margin-top: 4px;
+  }
+  .section { margin-top: 32px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+  }
+
+  /* ===== Card / Table ===== */
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .card + .card { margin-top: 12px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  th {
+    font-weight: 500;
+    color: var(--text-soft);
+    font-size: 13px;
+    background: var(--bg-soft);
+  }
+  tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: var(--bg-soft); }
+  .row-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+  }
+  td.col-actions { text-align: right; width: 1%; white-space: nowrap; }
+
+  .table-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  /* ===== Form ===== */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .field .help {
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .field .required { color: var(--danger); margin-left: 2px; }
+  input[type="text"], input[type="number"], input[type="date"], select, textarea {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.1s, box-shadow 0.1s;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  textarea { resize: vertical; min-height: 96px; font-family: inherit; }
+  .form-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ===== Modal ===== */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 15, 15, 0.4);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 60px;
+    z-index: 100;
+  }
+  .modal {
+    background: var(--bg);
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    width: 100%;
+    max-width: 720px;
+    max-height: calc(100vh - 100px);
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-title { font-size: 18px; font-weight: 600; margin: 0; }
+  .modal-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .modal-close {
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    color: var(--text-soft);
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  .modal-close:hover { background: var(--bg-hover); border-radius: 4px; }
+
+  /* ===== Badge ===== */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-soft);
+    color: var(--text-soft);
+  }
+  .badge.ok { background: var(--success-soft); color: var(--success); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .badge.bad { background: var(--danger-soft); color: var(--danger); }
+
+  /* ===== Char chips ===== */
+  .char-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 8px;
+  }
+  .char-chip {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 4px;
+    text-align: center;
+    font-size: 22px;
+    font-family: "Kaiti TC", "Kaiti SC", "STKaiti", "DFKai-SB", "標楷體", serif;
+    cursor: default;
+  }
+  .char-chip:hover { background: #fff; border-color: var(--border-strong); }
+
+  /* ===== Lookup result table ===== */
+  .lookup-table .char-cell {
+    font-size: 22px;
+    font-family: "Kaiti TC", "Kaiti SC", "STKaiti", "DFKai-SB", "標楷體", serif;
+    width: 60px;
+    text-align: center;
+  }
+  .lookup-table .not-found {
+    color: var(--danger);
+  }
+  .lookup-table .not-found .char-cell {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+
+  /* ===== Empty state ===== */
+  .empty {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-faint);
+    font-size: 14px;
+  }
+  .empty h3 {
+    color: var(--text-soft);
+    font-weight: 500;
+    margin: 0 0 8px 0;
+  }
+
+  /* ===== Toast ===== */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toast {
+    background: var(--text);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    font-size: 14px;
+    min-width: 200px;
+    animation: slideUp 0.2s ease;
+  }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--danger); }
+  @keyframes slideUp {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  /* ===== Poem display ===== */
+  .poem-block {
+    font-size: 18px;
+    line-height: 2;
+    font-family: "Kaiti TC", "Kaiti SC", "STKaiti", "DFKai-SB", "標楷體", serif;
+    padding: 16px 20px;
+    background: var(--bg-soft);
+    border-radius: var(--radius);
+    border-left: 3px solid var(--text);
+    margin: 12px 0;
+    white-space: pre-wrap;
+  }
+
+  /* ===== Detail meta ===== */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .meta-item {
+    background: var(--bg-soft);
+    padding: 10px 14px;
+    border-radius: var(--radius);
+  }
+  .meta-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    font-weight: 500;
+  }
+  .meta-value {
+    font-size: 15px;
+    color: var(--text);
+    margin-top: 2px;
+  }
+
+  .breadcrumb {
+    font-size: 13px;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+  .breadcrumb a {
+    color: var(--text-soft);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .breadcrumb a:hover { color: var(--text); text-decoration: underline; }
+
+  /* ===== Search box ===== */
+  .search-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 16px;
+  }
+  .search-row input { flex: 1; }
+
+  /* Single char lookup mini result */
+  .single-result {
+    background: var(--bg-soft);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-top: 12px;
+    text-align: center;
+  }
+  .single-result .big-char {
+    font-size: 64px;
+    font-family: "Kaiti TC", "Kaiti SC", "STKaiti", "DFKai-SB", "標楷體", serif;
+    line-height: 1;
+  }
+  .single-result .pages {
+    margin-top: 12px;
+    font-size: 16px;
+  }
+  .single-result .pages strong { font-weight: 600; }
+
+  /* Tip box */
+  .tip {
+    font-size: 13px;
+    color: var(--text-soft);
+    background: var(--bg-soft);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+  }
+
+  /* Stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--bg-soft);
+    padding: 14px 16px;
+    border-radius: var(--radius);
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  /* Page jump (book pages overview) */
+  .page-pill-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .page-pill {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 13px;
+    background: var(--bg);
+    transition: all 0.1s;
+  }
+  .page-pill:hover { background: var(--bg-soft); border-color: var(--border-strong); }
+  .page-pill.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+  /* Footer hint */
+  .footer-hint {
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 12px;
+    padding: 24px 0;
+  }
+
+  /* ===== Phase 2: Upload / annotation ===== */
+  .upload-dropzone {
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.1s, background 0.1s;
+  }
+  .upload-dropzone:hover, .upload-dropzone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .upload-dropzone .icon { font-size: 32px; }
+  .upload-dropzone .hint { color: var(--text-soft); font-size: 13px; margin-top: 4px; }
+
+  .progress-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.15s ease;
+    width: 0%;
+  }
+  .progress-text { font-size: 13px; color: var(--text-soft); white-space: nowrap; }
+
+  .upload-steps {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .step {
+    flex: 1;
+    min-width: 200px;
+    background: var(--bg-soft);
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .step.active { border-color: var(--accent); background: var(--accent-soft); }
+  .step.done { border-color: var(--success); background: var(--success-soft); }
+  .step-num {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--text-soft);
+    color: #fff;
+    text-align: center;
+    font-size: 12px;
+    line-height: 20px;
+    margin-right: 8px;
+  }
+  .step.active .step-num { background: var(--accent); }
+  .step.done .step-num { background: var(--success); }
+
+  .thumb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .thumb-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.1s, background 0.1s;
+  }
+  .thumb-card.saved {
+    border-color: var(--success);
+    background: var(--success-soft);
+  }
+  .thumb-card.skipped { opacity: 0.55; }
+  .thumb-img-wrap {
+    position: relative;
+    background: #000;
+    aspect-ratio: 16/9;
+    overflow: hidden;
+    cursor: zoom-in;
+  }
+  .thumb-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
+  .thumb-time {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .thumb-body {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .thumb-body input {
+    font-size: 13px;
+    padding: 5px 8px;
+  }
+  .thumb-body .field-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .thumb-body .field-row label {
+    font-size: 12px;
+    color: var(--text-soft);
+    width: 36px;
+  }
+  .thumb-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .thumb-actions button {
+    font-size: 12px;
+    padding: 4px 8px;
+    flex: 1;
+  }
+  .saved-tag {
+    font-size: 12px;
+    color: var(--success);
+    font-weight: 500;
+    text-align: center;
+    padding: 4px;
+  }
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    cursor: zoom-out;
+  }
+  .lightbox img {
+    max-width: 95vw;
+    max-height: 95vh;
+    object-fit: contain;
+  }
+
+  /* Responsive */
+  @media (max-width: 720px) {
+    .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .container { padding: 20px 16px; }
+    .form-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .page-title { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="brand">
+      兆婷藝術學院
+      <span class="brand-sub">書法比賽管理系統</span>
+    </div>
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-view="competitions">🏆 比賽管理</div>
+      <div class="tab" data-view="books">📚 字帖瀏覽</div>
+      <div class="tab" data-view="lookup">🔍 查字</div>
+      <div class="tab" data-view="upload">📸 補資料</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <button class="ghost sm" id="btn-export" title="把目前資料下載為 JSON 備份">⬇ 匯出 JSON</button>
+    <button class="ghost sm" id="btn-import" title="從 JSON 檔還原資料">⬆ 匯入 JSON</button>
+    <button class="ghost sm" id="btn-reset" title="清空 localStorage 並還原為初始資料">↺ 重置</button>
+    <input type="file" id="file-import" accept="application/json,.json" style="display:none" />
+  </div>
+</div>
+
+<div class="container" id="app"></div>
+<div class="footer-hint">資料儲存於本機瀏覽器（localStorage）· 記得定期匯出 JSON 備份</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script src="seed-data.js"></script>
+<script>
+// =================================================================
+// 兆婷藝術學院 - 書法比賽管理系統  (Phase 1)
+// 純前端、單檔 SPA、localStorage 儲存
+// =================================================================
+
+const STORAGE_KEY = 'calligraphy-system-data';
+
+const PAPER_SIZES = ['4K', '對K', '全開', '對開', '其他'];
+
+// ---------- State ----------
+let db = null;
+let view = { name: 'competitions', params: {} };
+// uploadSession 跨 render 保留：含目前選的字帖、已擷取的縮圖、已儲存標記
+let uploadSession = {
+  bookId: null,
+  frames: [],          // [{ id, dataURL, label, savedPage, skipped, charsInput, pageInput }]
+  extracting: false,
+  progress: 0,
+};
+
+// ---------- Storage ----------
+function loadDB() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('localStorage 資料損毀，改用種子資料', e);
+    }
+  }
+  // First run: clone seed data
+  return JSON.parse(JSON.stringify(window.SEED_DATA));
+}
+
+function saveDB() {
+  rebuildCharIndex();
+  updateStatistics();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+}
+
+function rebuildCharIndex() {
+  const index = {};
+  for (const bookId in db.book_pages) {
+    for (const pageStr in db.book_pages[bookId]) {
+      const page = parseInt(pageStr, 10);
+      const chars = db.book_pages[bookId][pageStr].chars || [];
+      for (const ch of chars) {
+        if (!index[ch]) index[ch] = [];
+        // Avoid duplicates
+        const exists = index[ch].some(e => e.book_id === bookId && e.page === page);
+        if (!exists) index[ch].push({ book_id: bookId, page });
+      }
+    }
+  }
+  db.char_index = index;
+}
+
+function updateStatistics() {
+  let totalPages = 0;
+  for (const bookId in db.book_pages) {
+    totalPages += Object.keys(db.book_pages[bookId]).length;
+  }
+  db.statistics = {
+    total_books: (db.books || []).length,
+    total_pages: totalPages,
+    total_unique_chars: Object.keys(db.char_index || {}).length,
+    total_competitions: (db.competitions || []).length,
+  };
+}
+
+// ---------- Helpers ----------
+function uid(prefix) {
+  return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+function escapeHTML(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function bookNameById(bookId) {
+  const b = (db.books || []).find(b => b.id === bookId);
+  return b ? b.name : '（未知字帖）';
+}
+
+// CJK detect: keep characters in CJK Unified + Extension A; ignore everything else
+function extractChars(text) {
+  if (!text) return [];
+  const out = [];
+  for (const ch of text) {
+    if (/[㐀-䶿一-鿿]/.test(ch)) out.push(ch);
+  }
+  return out;
+}
+
+function lookupChar(char) {
+  const entries = (db.char_index && db.char_index[char]) || [];
+  return entries.map(e => ({
+    book_id: e.book_id,
+    book_name: bookNameById(e.book_id),
+    page: e.page,
+  }));
+}
+
+// ---------- Toast ----------
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 2400);
+}
+
+// ---------- Render entry ----------
+function render() {
+  // Tab highlight
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.view === view.name);
+  });
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  if (view.name === 'competitions')      renderCompetitions(app);
+  else if (view.name === 'competition')  renderCompetitionDetail(app, view.params.id);
+  else if (view.name === 'books')        renderBooks(app);
+  else if (view.name === 'book')         renderBookDetail(app, view.params.id);
+  else if (view.name === 'lookup')       renderLookup(app);
+  else if (view.name === 'upload')       renderUpload(app);
+}
+
+function switchView(name, params) {
+  view = { name, params: params || {} };
+  render();
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+// =================================================================
+// View: 比賽管理（列表）
+// =================================================================
+function renderCompetitions(app) {
+  const comps = [...(db.competitions || [])].sort((a, b) => {
+    if (b.year !== a.year) return (b.year || 0) - (a.year || 0);
+    return (a.deadline || '').localeCompare(b.deadline || '');
+  });
+
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">比賽管理</h1>
+        <div class="page-subtitle">管理書法比賽題目，點開比賽自動對應字帖頁碼。</div>
+      </div>
+      <button class="primary" id="btn-add-comp">➕ 新增比賽</button>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">比賽總數</div><div class="stat-value">${db.statistics.total_competitions}</div></div>
+      <div class="stat-card"><div class="stat-label">字帖數</div><div class="stat-value">${db.statistics.total_books}</div></div>
+      <div class="stat-card"><div class="stat-label">收錄頁碼</div><div class="stat-value">${db.statistics.total_pages}</div></div>
+      <div class="stat-card"><div class="stat-label">收錄字數</div><div class="stat-value">${db.statistics.total_unique_chars}</div></div>
+    </div>
+
+    ${comps.length === 0 ? `
+      <div class="card empty">
+        <h3>還沒有比賽</h3>
+        <div>點右上「新增比賽」開始建立第一場比賽。</div>
+      </div>
+    ` : `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>比賽名稱</th>
+              <th>年份</th>
+              <th>回合</th>
+              <th>截止日</th>
+              <th>規格</th>
+              <th>字帖</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${comps.map(c => `
+              <tr data-id="${c.id}" class="comp-row" style="cursor:pointer;">
+                <td><strong>${escapeHTML(c.name)}</strong>${c.theme ? `<div style="font-size:12px;color:var(--text-faint)">${escapeHTML(c.theme)}</div>` : ''}</td>
+                <td>${c.year || ''}</td>
+                <td>${escapeHTML(c.round || '—')}</td>
+                <td>${escapeHTML(c.deadline || '—')}</td>
+                <td><span class="badge">${escapeHTML((c.specification && c.specification.paper_size) || '—')}</span></td>
+                <td>${escapeHTML(bookNameById(c.source_book_id))}</td>
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <button class="sm" data-act="view" data-id="${c.id}">查看</button>
+                    <button class="sm" data-act="edit" data-id="${c.id}">編輯</button>
+                    <button class="sm danger" data-act="del" data-id="${c.id}">刪除</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `}
+  `;
+
+  // Bindings
+  const addBtn = document.getElementById('btn-add-comp');
+  if (addBtn) addBtn.onclick = () => openCompetitionForm(null);
+
+  app.querySelectorAll('.comp-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      const id = row.dataset.id;
+      if (btn) {
+        const act = btn.dataset.act;
+        e.stopPropagation();
+        if (act === 'view') switchView('competition', { id });
+        else if (act === 'edit') openCompetitionForm(id);
+        else if (act === 'del') deleteCompetition(id);
+      } else {
+        switchView('competition', { id });
+      }
+    });
+  });
+}
+
+// =================================================================
+// View: 比賽詳情（含逐字找頁碼）
+// =================================================================
+function renderCompetitionDetail(app, id) {
+  const c = (db.competitions || []).find(x => x.id === id);
+  if (!c) {
+    app.innerHTML = `<div class="empty"><h3>找不到這場比賽</h3>
+      <button class="sm" onclick="switchView('competitions')">回比賽列表</button></div>`;
+    return;
+  }
+  const chars = extractChars(c.poem_text);
+  const charRows = chars.map(ch => {
+    const results = lookupChar(ch);
+    const found = results.length > 0;
+    return `
+      <tr class="${found ? '' : 'not-found'}">
+        <td class="char-cell">${escapeHTML(ch)}</td>
+        <td>${found
+          ? results.map(r => `<span class="badge ok">${escapeHTML(r.book_name)} · 第 ${r.page} 頁</span>`).join(' ')
+          : `<span class="badge bad">✗ 待補</span>`}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const foundCount = chars.filter(ch => lookupChar(ch).length > 0).length;
+
+  app.innerHTML = `
+    <div class="breadcrumb">
+      <a onclick="switchView('competitions')">比賽管理</a> ›
+      <span>${escapeHTML(c.name)}</span>
+    </div>
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">🏆 ${escapeHTML(c.name)}</h1>
+        <div class="page-subtitle">${escapeHTML(c.round || '')}${c.round ? ' · ' : ''}${c.year || ''}${c.theme ? ' · ' + escapeHTML(c.theme) : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="sm" onclick="openCompetitionForm('${c.id}')">✏️ 編輯</button>
+        <button class="sm danger" onclick="deleteCompetition('${c.id}')">🗑 刪除</button>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item"><div class="meta-label">截止日期</div><div class="meta-value">${escapeHTML(c.deadline || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">比賽規格</div><div class="meta-value">${escapeHTML((c.specification && c.specification.paper_size) || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">來源字帖</div><div class="meta-value">${escapeHTML(bookNameById(c.source_book_id))}</div></div>
+      <div class="meta-item"><div class="meta-label">建立日期</div><div class="meta-value">${escapeHTML(c.created_at || '—')}</div></div>
+    </div>
+
+    ${c.notes ? `<div class="tip"><strong>備註：</strong>${escapeHTML(c.notes)}</div>` : ''}
+
+    <div class="section">
+      <div class="section-title">題目（詩文）</div>
+      <div class="poem-block">${escapeHTML(c.poem_text || '（未填寫）')}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        字帖頁碼對應
+        <span style="float:right;font-weight:normal;text-transform:none;letter-spacing:0;">
+          共 ${chars.length} 字 · 已對應 <strong style="color:var(--success)">${foundCount}</strong> 字 · 待補 <strong style="color:var(--danger)">${chars.length - foundCount}</strong> 字
+        </span>
+      </div>
+      ${chars.length === 0 ? `
+        <div class="empty"><h3>還沒有題目內容</h3><div>請編輯比賽，填入詩文。</div></div>
+      ` : `
+        <div class="table-wrap">
+          <table class="lookup-table">
+            <thead><tr><th style="width:60px">字</th><th>對應頁碼</th></tr></thead>
+            <tbody>${charRows}</tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// ---------- Competition CRUD ----------
+function openCompetitionForm(id) {
+  const isEdit = !!id;
+  const c = isEdit
+    ? (db.competitions || []).find(x => x.id === id)
+    : {
+        id: uid('comp'),
+        name: '',
+        year: new Date().getFullYear(),
+        round: '',
+        deadline: '',
+        specification: { paper_size: '4K', paper_size_options: PAPER_SIZES.slice(), notes: '' },
+        source_book_id: (db.books[0] && db.books[0].id) || '',
+        poem_text: '',
+        theme: '',
+        created_at: todayISO(),
+        notes: '',
+      };
+  if (!c) return;
+
+  const bookOptions = (db.books || []).map(b =>
+    `<option value="${escapeHTML(b.id)}" ${b.id === c.source_book_id ? 'selected' : ''}>${escapeHTML(b.name)}</option>`
+  ).join('');
+  const sizeOptions = PAPER_SIZES.map(s =>
+    `<option value="${s}" ${s === ((c.specification && c.specification.paper_size) || '4K') ? 'selected' : ''}>${s}</option>`
+  ).join('');
+
+  const html = `
+    <form id="comp-form" class="form-grid">
+      <div class="field full">
+        <label>比賽名稱<span class="required">*</span></label>
+        <input type="text" name="name" required value="${escapeHTML(c.name)}" placeholder="例：吳沙書法比賽" />
+      </div>
+      <div class="field">
+        <label>年份<span class="required">*</span></label>
+        <input type="number" name="year" required min="1900" max="2999" value="${c.year || ''}" />
+      </div>
+      <div class="field">
+        <label>回合 / 場次</label>
+        <input type="text" name="round" value="${escapeHTML(c.round || '')}" placeholder="例：第一回 / 春季 / 縣賽" />
+      </div>
+      <div class="field">
+        <label>截止日期<span class="required">*</span></label>
+        <input type="date" name="deadline" required value="${escapeHTML(c.deadline || '')}" />
+      </div>
+      <div class="field">
+        <label>比賽規格<span class="required">*</span></label>
+        <select name="paper_size">${sizeOptions}</select>
+      </div>
+      <div class="field full">
+        <label>來源字帖<span class="required">*</span></label>
+        <select name="source_book_id" required>${bookOptions}</select>
+      </div>
+      <div class="field full">
+        <label>題目內容（詩）<span class="required">*</span></label>
+        <textarea name="poem_text" required placeholder="貼上詩文，標點符號會自動忽略">${escapeHTML(c.poem_text || '')}</textarea>
+        <div class="help">系統會逐字找對應頁碼，標點和空白會自動忽略。</div>
+      </div>
+      <div class="field full">
+        <label>比賽主題 / 備註</label>
+        <input type="text" name="theme" value="${escapeHTML(c.theme || '')}" placeholder="例：宜蘭礁溪湯圍溫泉" />
+      </div>
+      <div class="field full">
+        <label>其他備註</label>
+        <textarea name="notes" placeholder="（選填）">${escapeHTML(c.notes || '')}</textarea>
+      </div>
+      <div class="form-actions full">
+        <button type="button" class="ghost" onclick="closeModal()">取消</button>
+        <button type="submit" class="primary">${isEdit ? '更新比賽' : '新增比賽'}</button>
+      </div>
+    </form>
+  `;
+
+  openModal(isEdit ? '編輯比賽' : '新增比賽', html);
+
+  document.getElementById('comp-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const updated = {
+      ...c,
+      name: fd.get('name').trim(),
+      year: parseInt(fd.get('year'), 10) || c.year,
+      round: fd.get('round').trim(),
+      deadline: fd.get('deadline'),
+      specification: {
+        paper_size: fd.get('paper_size'),
+        paper_size_options: PAPER_SIZES.slice(),
+        notes: (c.specification && c.specification.notes) || '',
+      },
+      source_book_id: fd.get('source_book_id'),
+      poem_text: fd.get('poem_text'),
+      theme: fd.get('theme').trim(),
+      notes: fd.get('notes'),
+    };
+    if (!isEdit) {
+      db.competitions = db.competitions || [];
+      db.competitions.push(updated);
+    } else {
+      const idx = db.competitions.findIndex(x => x.id === id);
+      db.competitions[idx] = updated;
+    }
+    saveDB();
+    closeModal();
+    toast(isEdit ? '比賽已更新' : '比賽已新增', 'success');
+    if (view.name === 'competition') switchView('competition', { id: updated.id });
+    else render();
+  });
+}
+
+function deleteCompetition(id) {
+  const c = db.competitions.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`確定要刪除比賽「${c.name}」？此動作無法復原。`)) return;
+  db.competitions = db.competitions.filter(x => x.id !== id);
+  saveDB();
+  toast('比賽已刪除', 'success');
+  if (view.name === 'competition') switchView('competitions');
+  else render();
+}
+
+// =================================================================
+// View: 字帖瀏覽
+// =================================================================
+function renderBooks(app) {
+  const books = db.books || [];
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">字帖瀏覽</h1>
+        <div class="page-subtitle">查看每本字帖每頁收錄的字。要新增頁碼資料請到「📸 補資料」。</div>
+      </div>
+      <button class="primary" onclick="openBookForm(null)">➕ 新增字帖</button>
+    </div>
+
+    ${books.length === 0 ? `<div class="empty"><h3>還沒有字帖</h3></div>` : `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>字帖名稱</th><th>頁碼範圍</th><th>結構</th><th>已收錄頁數</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${books.map(b => {
+              const collected = db.book_pages && db.book_pages[b.id] ? Object.keys(db.book_pages[b.id]).length : 0;
+              return `
+                <tr data-id="${b.id}" class="book-row" style="cursor:pointer;">
+                  <td>
+                    <strong>${escapeHTML(b.name)}</strong>
+                    ${b.description ? `<div style="font-size:12px;color:var(--text-faint)">${escapeHTML(b.description)}</div>` : ''}
+                  </td>
+                  <td>${escapeHTML(b.page_range || '—')}</td>
+                  <td>${escapeHTML(b.structure || '—')}</td>
+                  <td><span class="badge">${collected} 頁</span></td>
+                  <td class="col-actions"><button class="sm">查看內容 →</button></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `}
+  `;
+
+  app.querySelectorAll('.book-row').forEach(row => {
+    row.addEventListener('click', () => switchView('book', { id: row.dataset.id }));
+  });
+}
+
+function renderBookDetail(app, bookId) {
+  const book = (db.books || []).find(b => b.id === bookId);
+  if (!book) {
+    app.innerHTML = `<div class="empty"><h3>找不到字帖</h3>
+      <button class="sm" onclick="switchView('books')">回字帖列表</button></div>`;
+    return;
+  }
+  const pages = db.book_pages[bookId] || {};
+  const pageNumbers = Object.keys(pages).map(p => parseInt(p, 10)).sort((a, b) => a - b);
+  const selectedPage = view.params.page != null
+    ? String(view.params.page)
+    : (pageNumbers[0] != null ? String(pageNumbers[0]) : null);
+
+  app.innerHTML = `
+    <div class="breadcrumb">
+      <a onclick="switchView('books')">字帖瀏覽</a> ›
+      <span>${escapeHTML(book.name)}</span>
+    </div>
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">📚 ${escapeHTML(book.name)}</h1>
+        <div class="page-subtitle">${escapeHTML(book.description || '')}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="sm" onclick="openBookForm('${book.id}')">✏️ 編輯字帖</button>
+        <button class="sm" onclick="(uploadSession.bookId='${book.id}'); switchView('upload')">📸 補資料</button>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item"><div class="meta-label">頁碼範圍</div><div class="meta-value">${escapeHTML(book.page_range || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">結構</div><div class="meta-value">${escapeHTML(book.structure || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">頁碼格式</div><div class="meta-value">${escapeHTML(book.page_number_format || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">已收錄頁數</div><div class="meta-value">${pageNumbers.length}</div></div>
+    </div>
+
+    ${pageNumbers.length === 0 ? `
+      <div class="empty"><h3>還沒有頁碼資料</h3><div>Phase 2 將支援上傳影片/照片補資料。</div></div>
+    ` : `
+      <div class="section">
+        <div class="section-title">頁碼導覽（點擊查看該頁）</div>
+        <div class="page-pill-grid" id="page-pills">
+          ${pageNumbers.map(p => `
+            <div class="page-pill ${String(p) === selectedPage ? 'active' : ''}" data-page="${p}">第 ${p} 頁</div>
+          `).join('')}
+        </div>
+      </div>
+
+      ${selectedPage ? renderPageContent(bookId, selectedPage) : ''}
+    `}
+  `;
+
+  app.querySelectorAll('.page-pill').forEach(p => {
+    p.addEventListener('click', () => switchView('book', { id: bookId, page: parseInt(p.dataset.page, 10) }));
+  });
+}
+
+function renderPageContent(bookId, pageStr) {
+  const pageData = (db.book_pages[bookId] || {})[pageStr];
+  if (!pageData) return '';
+  return `
+    <div class="section">
+      <div class="section-title">
+        第 ${pageStr} 頁
+        <span style="float:right;font-weight:normal;text-transform:none;letter-spacing:0;color:var(--text-soft)">
+          ${pageData.topic ? escapeHTML(pageData.topic) + '　' : ''}
+          <button class="sm ghost" onclick="openManualPageForm('${bookId}', ${parseInt(pageStr, 10)})">✏️ 編輯</button>
+        </span>
+      </div>
+      <div class="char-grid">
+        ${(pageData.chars || []).map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// =================================================================
+// View: 查字
+// =================================================================
+function renderLookup(app) {
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">查字找頁碼</h1>
+        <div class="page-subtitle">支援單字查詢，或整首詩一次查完。</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">單字查詢</div>
+      <div class="search-row">
+        <input type="text" id="single-char" placeholder="輸入一個字，例：把" maxlength="4" />
+        <button class="primary" id="btn-single">查詢</button>
+      </div>
+      <div id="single-result"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">整首詩查詢</div>
+      <div class="tip">貼上整首詩或一段文字，系統會自動拆字查詢，標點與空白會被忽略。</div>
+      <textarea id="poem-input" placeholder="例：泉流瀉出半清湍，唯有湯圍水異香。是否天工鑪火後，浴盆把住不驚寒。"></textarea>
+      <div style="margin-top:8px;display:flex;gap:8px;">
+        <button class="primary" id="btn-poem">查詢整首詩</button>
+        <button class="ghost" id="btn-clear-poem">清空</button>
+      </div>
+      <div id="poem-result" style="margin-top:16px;"></div>
+    </div>
+  `;
+
+  const singleInput = document.getElementById('single-char');
+  singleInput.focus();
+  document.getElementById('btn-single').addEventListener('click', doSingleLookup);
+  singleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') doSingleLookup(); });
+
+  document.getElementById('btn-poem').addEventListener('click', doPoemLookup);
+  document.getElementById('btn-clear-poem').addEventListener('click', () => {
+    document.getElementById('poem-input').value = '';
+    document.getElementById('poem-result').innerHTML = '';
+  });
+}
+
+function doSingleLookup() {
+  const raw = document.getElementById('single-char').value;
+  const chars = extractChars(raw);
+  const out = document.getElementById('single-result');
+  if (chars.length === 0) {
+    out.innerHTML = `<div class="tip">請輸入一個中文字。</div>`;
+    return;
+  }
+  const ch = chars[0];
+  const results = lookupChar(ch);
+  if (results.length === 0) {
+    out.innerHTML = `
+      <div class="single-result">
+        <div class="big-char" style="color:var(--danger)">${escapeHTML(ch)}</div>
+        <div class="pages"><span class="badge bad">✗ 查無此字</span></div>
+      </div>`;
+  } else {
+    out.innerHTML = `
+      <div class="single-result">
+        <div class="big-char">${escapeHTML(ch)}</div>
+        <div class="pages">
+          ${results.map(r => `<div>${escapeHTML(r.book_name)} · <strong>第 ${r.page} 頁</strong></div>`).join('')}
+        </div>
+      </div>`;
+  }
+}
+
+function doPoemLookup() {
+  const raw = document.getElementById('poem-input').value;
+  const chars = extractChars(raw);
+  const out = document.getElementById('poem-result');
+  if (chars.length === 0) {
+    out.innerHTML = `<div class="tip">沒有偵測到中文字。</div>`;
+    return;
+  }
+  const foundCount = chars.filter(ch => lookupChar(ch).length > 0).length;
+
+  out.innerHTML = `
+    <div style="margin-bottom:10px;color:var(--text-soft);font-size:13px">
+      共 ${chars.length} 字 · 已對應 <strong style="color:var(--success)">${foundCount}</strong> 字 · 待補 <strong style="color:var(--danger)">${chars.length - foundCount}</strong> 字
+    </div>
+    <div class="table-wrap">
+      <table class="lookup-table">
+        <thead><tr><th style="width:60px">字</th><th>對應頁碼</th></tr></thead>
+        <tbody>
+          ${chars.map(ch => {
+            const results = lookupChar(ch);
+            const found = results.length > 0;
+            return `
+              <tr class="${found ? '' : 'not-found'}">
+                <td class="char-cell">${escapeHTML(ch)}</td>
+                <td>${found
+                  ? results.map(r => `<span class="badge ok">${escapeHTML(r.book_name)} · 第 ${r.page} 頁</span>`).join(' ')
+                  : `<span class="badge bad">✗ 待補</span>`}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// =================================================================
+// View: 📸 補資料（Phase 2）
+// =================================================================
+function renderUpload(app) {
+  const books = db.books || [];
+  if (books.length === 0) {
+    app.innerHTML = `
+      <div class="page-header"><div><h1 class="page-title">補資料</h1></div></div>
+      <div class="empty">
+        <h3>還沒有任何字帖</h3>
+        <div>請先到「字帖瀏覽」新增一本字帖。</div>
+        <div style="margin-top:12px"><button class="primary" onclick="openBookForm(null)">➕ 新增字帖</button></div>
+      </div>`;
+    return;
+  }
+
+  // Default book = first book if none chosen
+  if (!uploadSession.bookId) uploadSession.bookId = books[0].id;
+  const currentBook = books.find(b => b.id === uploadSession.bookId) || books[0];
+  uploadSession.bookId = currentBook.id;
+
+  const step1Done = !!uploadSession.bookId;
+  const step2Done = uploadSession.frames.length > 0;
+  const step3Done = step2Done && uploadSession.frames.every(f => f.savedPage || f.skipped);
+
+  const savedCount = uploadSession.frames.filter(f => f.savedPage).length;
+  const skippedCount = uploadSession.frames.filter(f => f.skipped).length;
+
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">📸 補資料</h1>
+        <div class="page-subtitle">上傳影片每秒擷取一張，或直接上傳照片，逐張標註頁碼與該頁的字。</div>
+      </div>
+      ${uploadSession.frames.length > 0 ? `<button class="ghost" id="btn-clear-session">↺ 清空目前工作</button>` : ''}
+    </div>
+
+    <div class="upload-steps">
+      <div class="step ${step1Done ? 'done' : 'active'}"><span class="step-num">1</span>選擇字帖</div>
+      <div class="step ${step2Done ? 'done' : (step1Done ? 'active' : '')}"><span class="step-num">2</span>上傳影片或照片</div>
+      <div class="step ${step3Done ? 'done' : (step2Done ? 'active' : '')}"><span class="step-num">3</span>逐張標註並儲存</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">步驟 1 · 補資料到哪本字帖</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select id="upload-book-select" style="max-width:360px;">
+          ${books.map(b => `<option value="${escapeHTML(b.id)}" ${b.id === currentBook.id ? 'selected' : ''}>${escapeHTML(b.name)}</option>`).join('')}
+        </select>
+        <button class="sm" onclick="openBookForm(null)">➕ 新增字帖</button>
+        <button class="sm" onclick="openBookForm('${currentBook.id}')">✏️ 編輯這本</button>
+        <button class="sm" onclick="openManualPageForm('${currentBook.id}', null)">+ 手動新增一頁</button>
+      </div>
+      <div class="help" style="margin-top:6px;font-size:12px;color:var(--text-faint);">${escapeHTML(currentBook.description || '')}　已收錄 ${Object.keys((db.book_pages[currentBook.id] || {})).length} 頁</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">步驟 2 · 上傳影片或照片</div>
+      <div class="upload-dropzone" id="upload-zone">
+        <div class="icon">🎬 / 📷</div>
+        <div><strong>點此選擇</strong>，或把檔案拖進來</div>
+        <div class="hint">影片：.mp4 / .mov / .webm，自動每秒擷取一張<br>照片：.jpg / .png，可多選</div>
+        <input type="file" id="upload-input" accept="video/*,image/*" multiple style="display:none" />
+      </div>
+      <div style="margin-top:10px;display:flex;gap:12px;align-items:center;">
+        <label style="font-size:13px;color:var(--text-soft);">影片擷取間隔：</label>
+        <select id="frame-interval" style="max-width:120px;">
+          <option value="0.5">每 0.5 秒</option>
+          <option value="1" selected>每 1 秒</option>
+          <option value="2">每 2 秒</option>
+          <option value="3">每 3 秒</option>
+        </select>
+        <span class="help" style="font-size:12px;color:var(--text-faint);">影片愈長、間隔愈短 → 縮圖愈多，會吃較多記憶體</span>
+      </div>
+      <div id="extract-progress" style="display:none">
+        <div class="progress-row">
+          <div class="progress-bar"><div class="progress-bar-fill" id="extract-progress-fill"></div></div>
+          <div class="progress-text" id="extract-progress-text">0 %</div>
+        </div>
+      </div>
+    </div>
+
+    ${uploadSession.frames.length > 0 ? `
+      <div class="section">
+        <div class="section-title">
+          步驟 3 · 逐張標註
+          <span style="float:right;font-weight:normal;text-transform:none;letter-spacing:0;color:var(--text-soft);">
+            共 ${uploadSession.frames.length} 張 · 已儲存 <strong style="color:var(--success)">${savedCount}</strong> · 跳過 ${skippedCount}
+          </span>
+        </div>
+        <div class="tip">
+          <strong>頁碼</strong>填數字；<strong>字</strong>用 <code>、</code>、空白、逗號或換行分隔都可以。儲存後會自動更新查字索引。
+        </div>
+        <div class="thumb-grid" id="thumb-grid">
+          ${uploadSession.frames.map(f => renderThumbCard(f)).join('')}
+        </div>
+        ${step3Done ? `
+          <div style="margin-top:16px;text-align:center;">
+            <button class="primary" onclick="finishUploadSession()">✅ 完成，前往字帖瀏覽</button>
+          </div>
+        ` : ''}
+      </div>
+    ` : ''}
+  `;
+
+  // Bindings
+  document.getElementById('upload-book-select').addEventListener('change', (e) => {
+    if (uploadSession.frames.length > 0) {
+      if (!confirm('切換字帖會清空目前的工作（已儲存的頁碼不受影響）。確定切換？')) {
+        e.target.value = uploadSession.bookId;
+        return;
+      }
+      uploadSession.frames = [];
+    }
+    uploadSession.bookId = e.target.value;
+    render();
+  });
+
+  const zone = document.getElementById('upload-zone');
+  const input = document.getElementById('upload-input');
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    handleUploadFiles(e.dataTransfer.files);
+  });
+  input.addEventListener('change', (e) => handleUploadFiles(e.target.files));
+
+  const clearBtn = document.getElementById('btn-clear-session');
+  if (clearBtn) clearBtn.onclick = () => {
+    if (!confirm('清空目前工作？已儲存到字帖的頁碼不受影響。')) return;
+    uploadSession.frames = [];
+    render();
+  };
+
+  // Bind per-card actions
+  document.querySelectorAll('.thumb-card').forEach(card => bindThumbCardActions(card));
+}
+
+function renderThumbCard(frame) {
+  const f = frame;
+  const isSaved = !!f.savedPage;
+  const isSkipped = !!f.skipped;
+  const stateClass = isSaved ? 'saved' : (isSkipped ? 'skipped' : '');
+  const timeLabel = f.label || (f.timeSec != null ? `${Math.floor(f.timeSec)}s` : '');
+  return `
+    <div class="thumb-card ${stateClass}" data-fid="${f.id}">
+      <div class="thumb-img-wrap" data-act="zoom">
+        <img src="${f.dataURL}" alt="" loading="lazy" />
+        ${timeLabel ? `<div class="thumb-time">${escapeHTML(timeLabel)}</div>` : ''}
+      </div>
+      <div class="thumb-body">
+        ${isSaved ? `
+          <div class="saved-tag">✓ 已存到第 ${f.savedPage} 頁</div>
+          <div style="font-size:12px;color:var(--text-soft);text-align:center;">字：${escapeHTML((f.charsInput || '').slice(0, 40))}</div>
+          <div class="thumb-actions">
+            <button data-act="reedit">重新編輯</button>
+          </div>
+        ` : `
+          <div class="field-row"><label>頁碼</label><input type="number" data-field="page" value="${escapeHTML(f.pageInput || '')}" placeholder="例：30" /></div>
+          <div class="field-row"><label>字</label><input type="text" data-field="chars" value="${escapeHTML(f.charsInput || '')}" placeholder="例：泉、流、清、出、有" /></div>
+          <div class="thumb-actions">
+            <button class="primary" data-act="save">儲存</button>
+            <button data-act="skip">跳過</button>
+            <button class="danger" data-act="remove">刪除</button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function bindThumbCardActions(card) {
+  const fid = card.dataset.fid;
+  const findFrame = () => uploadSession.frames.find(x => x.id === fid);
+  card.querySelectorAll('[data-act]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const act = el.dataset.act;
+      const f = findFrame();
+      if (!f) return;
+      if (act === 'zoom') openLightbox(f.dataURL);
+      else if (act === 'save') saveThumbCard(card, f);
+      else if (act === 'skip') { f.skipped = true; render(); }
+      else if (act === 'remove') {
+        uploadSession.frames = uploadSession.frames.filter(x => x.id !== fid);
+        render();
+      } else if (act === 'reedit') {
+        // Detach saved state (don't auto-remove from book; user may re-save with different content)
+        f.savedPage = null;
+        f.skipped = false;
+        render();
+      }
+    });
+  });
+  // Sync inputs back to frame so re-render preserves them
+  card.querySelectorAll('[data-field]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const f = findFrame(); if (!f) return;
+      const field = inp.dataset.field;
+      if (field === 'page') f.pageInput = inp.value;
+      else if (field === 'chars') f.charsInput = inp.value;
+    });
+  });
+}
+
+function saveThumbCard(card, f) {
+  const pageInput = card.querySelector('[data-field="page"]').value.trim();
+  const charsInput = card.querySelector('[data-field="chars"]').value;
+  const page = parseInt(pageInput, 10);
+  if (!page || page < 1) { toast('請輸入有效的頁碼', 'error'); return; }
+  const chars = parseCharString(charsInput);
+  if (chars.length === 0) { toast('請輸入該頁的字', 'error'); return; }
+  const existing = (db.book_pages[uploadSession.bookId] || {})[String(page)];
+  if (existing && existing.chars && existing.chars.length > 0) {
+    if (!confirm(`第 ${page} 頁已有資料（${existing.chars.length} 字）。覆蓋？`)) return;
+  }
+  savePage(uploadSession.bookId, page, chars, '');
+  f.savedPage = page;
+  f.pageInput = String(page);
+  f.charsInput = chars.join('、');
+  f.skipped = false;
+  toast(`已存到第 ${page} 頁（${chars.length} 字）`, 'success');
+  render();
+}
+
+// 切字串：頓號、逗號、句號、空白、換行、分號都當分隔
+function parseCharString(s) {
+  if (!s) return [];
+  return s.split(/[\s,，、;；。\n\r]+/).map(x => x.trim()).filter(x => x.length > 0)
+    // 進一步只保留 CJK 字（每段也許還是混到標點）
+    .flatMap(seg => extractChars(seg));
+}
+
+function savePage(bookId, pageNum, charsArr, topic) {
+  db.book_pages[bookId] = db.book_pages[bookId] || {};
+  db.book_pages[bookId][String(pageNum)] = {
+    chars: charsArr,
+    topic: topic || (db.book_pages[bookId][String(pageNum)] && db.book_pages[bookId][String(pageNum)].topic) || '',
+  };
+  saveDB();
+}
+
+function finishUploadSession() {
+  const bookId = uploadSession.bookId;
+  uploadSession.frames = [];
+  switchView('book', { id: bookId });
+}
+
+// ---------- 影片擷取 ----------
+async function handleUploadFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (files.length === 0) return;
+  if (uploadSession.extracting) { toast('上一個工作還在處理中', 'error'); return; }
+  uploadSession.extracting = true;
+
+  const interval = parseFloat(document.getElementById('frame-interval').value) || 1;
+  const progressBox = document.getElementById('extract-progress');
+  const fill = document.getElementById('extract-progress-fill');
+  const text = document.getElementById('extract-progress-text');
+  progressBox.style.display = '';
+
+  let totalDone = 0;
+  let totalSteps = 0;
+  // Pre-count: photos = 1 step each, videos = unknown until metadata, so estimate by file count
+  totalSteps = files.length;
+  const setProgress = (label, ratio) => {
+    fill.style.width = (ratio * 100).toFixed(1) + '%';
+    text.textContent = label;
+  };
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const baseLabel = `(${i+1}/${files.length}) ${f.name}`;
+      if (f.type.startsWith('video/')) {
+        setProgress(baseLabel + ' 解析影片中…', i / files.length);
+        const frames = await extractFramesFromVideo(f, interval, (cur, dur) => {
+          setProgress(`${baseLabel}　${cur.toFixed(1)} / ${dur.toFixed(1)} 秒`, (i + cur / dur) / files.length);
+        });
+        for (const fr of frames) {
+          uploadSession.frames.push({
+            id: uid('fr'),
+            dataURL: fr.dataURL,
+            label: `${fr.timeSec.toFixed(0)}s @ ${f.name}`,
+            timeSec: fr.timeSec,
+            pageInput: '',
+            charsInput: '',
+            savedPage: null,
+            skipped: false,
+          });
+        }
+      } else if (f.type.startsWith('image/')) {
+        setProgress(baseLabel + ' 載入照片中…', i / files.length);
+        const dataURL = await loadPhotoFile(f);
+        uploadSession.frames.push({
+          id: uid('fr'),
+          dataURL,
+          label: f.name,
+          timeSec: null,
+          pageInput: '',
+          charsInput: '',
+          savedPage: null,
+          skipped: false,
+        });
+      }
+      setProgress(baseLabel + ' 完成', (i + 1) / files.length);
+    }
+    toast(`已擷取 ${uploadSession.frames.length} 張`, 'success');
+  } catch (err) {
+    console.error(err);
+    toast('處理失敗：' + err.message, 'error');
+  } finally {
+    uploadSession.extracting = false;
+    setTimeout(() => { progressBox.style.display = 'none'; }, 600);
+    render();
+  }
+}
+
+function extractFramesFromVideo(file, intervalSec, onProgress) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+    const url = URL.createObjectURL(file);
+    video.src = url;
+
+    video.onerror = () => reject(new Error('無法載入影片（瀏覽器可能不支援此格式）'));
+    video.onloadedmetadata = async () => {
+      const duration = isFinite(video.duration) ? video.duration : 0;
+      if (!duration) {
+        URL.revokeObjectURL(url);
+        return reject(new Error('影片時長為 0，無法擷取'));
+      }
+      // 縮圖最大寬 640 以省記憶體
+      const maxW = 640;
+      const ratio = Math.min(1, maxW / (video.videoWidth || maxW));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round((video.videoWidth || maxW) * ratio);
+      canvas.height = Math.round((video.videoHeight || maxW * 9 / 16) * ratio);
+      const ctx = canvas.getContext('2d');
+
+      const frames = [];
+      const seekTo = (t) => new Promise((res) => {
+        const handler = () => { video.removeEventListener('seeked', handler); res(); };
+        video.addEventListener('seeked', handler);
+        // Clamp slightly before end to avoid hang
+        video.currentTime = Math.min(t, Math.max(0, duration - 0.05));
+      });
+
+      try {
+        for (let t = 0; t < duration; t += intervalSec) {
+          await seekTo(t);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataURL = canvas.toDataURL('image/jpeg', 0.7);
+          frames.push({ dataURL, timeSec: t });
+          if (onProgress) onProgress(t, duration);
+        }
+        URL.revokeObjectURL(url);
+        resolve(frames);
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+  });
+}
+
+function loadPhotoFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      // 同樣壓縮成 640 寬 jpeg 以省記憶體
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1024;
+        const ratio = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => reject(new Error('照片解碼失敗：' + file.name));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('讀取檔案失敗：' + file.name));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------- Lightbox ----------
+function openLightbox(src) {
+  const lb = document.createElement('div');
+  lb.className = 'lightbox';
+  lb.innerHTML = `<img src="${src}" alt="" />`;
+  lb.addEventListener('click', () => lb.remove());
+  document.body.appendChild(lb);
+}
+
+// =================================================================
+// 字帖編輯（新增字帖、編輯字帖、手動新增/編輯/刪除頁）
+// =================================================================
+function openBookForm(id) {
+  const isEdit = !!id;
+  const b = isEdit
+    ? (db.books || []).find(x => x.id === id)
+    : { id: uid('book'), name: '', description: '', page_range: '', page_number_format: '阿拉伯數字', structure: '' };
+  if (!b) return;
+  const html = `
+    <form id="book-form" class="form-grid">
+      <div class="field full">
+        <label>字帖名稱<span class="required">*</span></label>
+        <input type="text" name="name" required value="${escapeHTML(b.name)}" placeholder="例：學院字帖、楷書範本" />
+      </div>
+      <div class="field full">
+        <label>描述 / 備註</label>
+        <input type="text" name="description" value="${escapeHTML(b.description || '')}" placeholder="例：綠色書緣厚字帖" />
+      </div>
+      <div class="field">
+        <label>頁碼範圍</label>
+        <input type="text" name="page_range" value="${escapeHTML(b.page_range || '')}" placeholder="例：6-134" />
+      </div>
+      <div class="field">
+        <label>頁碼格式</label>
+        <input type="text" name="page_number_format" value="${escapeHTML(b.page_number_format || '')}" placeholder="阿拉伯數字 / 中文數字" />
+      </div>
+      <div class="field full">
+        <label>結構說明</label>
+        <input type="text" name="structure" value="${escapeHTML(b.structure || '')}" placeholder="例：每頁 7-8 個字" />
+      </div>
+      <div class="form-actions full">
+        ${isEdit ? `<button type="button" class="danger" onclick="deleteBook('${b.id}')">🗑 刪除字帖</button>` : ''}
+        <div style="flex:1"></div>
+        <button type="button" class="ghost" onclick="closeModal()">取消</button>
+        <button type="submit" class="primary">${isEdit ? '更新' : '新增'}</button>
+      </div>
+    </form>
+  `;
+  openModal(isEdit ? '編輯字帖' : '新增字帖', html);
+
+  document.getElementById('book-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const updated = {
+      ...b,
+      name: fd.get('name').trim(),
+      description: fd.get('description'),
+      page_range: fd.get('page_range'),
+      page_number_format: fd.get('page_number_format'),
+      structure: fd.get('structure'),
+    };
+    if (!isEdit) {
+      db.books.push(updated);
+      db.book_pages[updated.id] = db.book_pages[updated.id] || {};
+    } else {
+      const idx = db.books.findIndex(x => x.id === id);
+      db.books[idx] = updated;
+    }
+    saveDB();
+    closeModal();
+    toast(isEdit ? '字帖已更新' : '字帖已新增', 'success');
+    render();
+  });
+}
+
+function deleteBook(id) {
+  const b = db.books.find(x => x.id === id);
+  if (!b) return;
+  const pageCount = Object.keys(db.book_pages[id] || {}).length;
+  const compsUsing = (db.competitions || []).filter(c => c.source_book_id === id);
+  let msg = `確定要刪除字帖「${b.name}」？已收錄 ${pageCount} 頁將一併刪除。`;
+  if (compsUsing.length > 0) msg += `\n\n有 ${compsUsing.length} 場比賽正在使用這本字帖，這些比賽的「來源字帖」會變成空白。`;
+  if (!confirm(msg)) return;
+  db.books = db.books.filter(x => x.id !== id);
+  delete db.book_pages[id];
+  // 把使用此字帖的比賽 source_book_id 改為第一本剩下的字帖（若有），否則空字串
+  const fallback = (db.books[0] && db.books[0].id) || '';
+  for (const c of (db.competitions || [])) {
+    if (c.source_book_id === id) c.source_book_id = fallback;
+  }
+  if (uploadSession.bookId === id) uploadSession.bookId = fallback;
+  saveDB();
+  closeModal();
+  toast('字帖已刪除', 'success');
+  if (view.name === 'book') switchView('books');
+  else render();
+}
+
+function openManualPageForm(bookId, pageNum) {
+  const isEdit = pageNum != null;
+  const existing = isEdit ? (db.book_pages[bookId] || {})[String(pageNum)] : null;
+  const html = `
+    <form id="page-form" class="form-grid">
+      <div class="field">
+        <label>頁碼<span class="required">*</span></label>
+        <input type="number" name="page" required value="${isEdit ? pageNum : ''}" ${isEdit ? 'readonly' : ''} placeholder="例：30" />
+      </div>
+      <div class="field">
+        <label>頁面主題（選填）</label>
+        <input type="text" name="topic" value="${escapeHTML(existing?.topic || '')}" placeholder="例：特色筆法─橫畫" />
+      </div>
+      <div class="field full">
+        <label>這頁的字<span class="required">*</span></label>
+        <textarea name="chars" required placeholder="可用、 ， 空白 換行 分隔">${escapeHTML((existing?.chars || []).join('、'))}</textarea>
+      </div>
+      <div class="form-actions full">
+        ${isEdit ? `<button type="button" class="danger" onclick="deletePage('${bookId}', ${pageNum})">🗑 刪除這頁</button>` : ''}
+        <div style="flex:1"></div>
+        <button type="button" class="ghost" onclick="closeModal()">取消</button>
+        <button type="submit" class="primary">${isEdit ? '更新' : '新增'}</button>
+      </div>
+    </form>
+  `;
+  openModal(isEdit ? `編輯第 ${pageNum} 頁` : '手動新增一頁', html);
+
+  document.getElementById('page-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const page = parseInt(fd.get('page'), 10);
+    if (!page) { toast('請輸入有效頁碼', 'error'); return; }
+    const chars = parseCharString(fd.get('chars'));
+    if (chars.length === 0) { toast('請至少輸入一個字', 'error'); return; }
+    if (!isEdit) {
+      const existing2 = (db.book_pages[bookId] || {})[String(page)];
+      if (existing2 && existing2.chars && existing2.chars.length > 0) {
+        if (!confirm(`第 ${page} 頁已有資料。覆蓋？`)) return;
+      }
+    }
+    savePage(bookId, page, chars, fd.get('topic'));
+    closeModal();
+    toast(isEdit ? '頁面已更新' : '頁面已新增', 'success');
+    if (view.name === 'book') switchView('book', { id: bookId, page });
+    else render();
+  });
+}
+
+function deletePage(bookId, pageNum) {
+  if (!confirm(`確定要刪除第 ${pageNum} 頁？`)) return;
+  if (db.book_pages[bookId]) delete db.book_pages[bookId][String(pageNum)];
+  saveDB();
+  closeModal();
+  toast(`已刪除第 ${pageNum} 頁`, 'success');
+  switchView('book', { id: bookId });
+}
+
+// =================================================================
+// Modal
+// =================================================================
+function openModal(title, bodyHTML) {
+  closeModal();
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.id = 'modal-backdrop';
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">${escapeHTML(title)}</h2>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body">${bodyHTML}</div>
+    </div>
+  `;
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap) closeModal();
+  });
+  document.body.appendChild(wrap);
+}
+function closeModal() {
+  const m = document.getElementById('modal-backdrop');
+  if (m) m.remove();
+}
+
+// =================================================================
+// Import / Export / Reset
+// =================================================================
+function exportJSON() {
+  const data = JSON.stringify(db, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  a.href = url;
+  a.download = `字帖資料-備份-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('已匯出 JSON 備份', 'success');
+}
+
+function importJSON(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const obj = JSON.parse(e.target.result);
+      if (!obj || typeof obj !== 'object') throw new Error('JSON 結構不合法');
+      if (!obj.books || !obj.book_pages) throw new Error('缺少 books 或 book_pages');
+      if (!confirm('匯入會覆蓋目前所有資料（建議先匯出備份）。確定繼續？')) return;
+      db = obj;
+      // Ensure required fields exist
+      db.competitions = db.competitions || [];
+      db.pending_uploads = db.pending_uploads || [];
+      saveDB();
+      toast('匯入完成', 'success');
+      render();
+    } catch (err) {
+      console.error(err);
+      toast('匯入失敗：' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function resetSeed() {
+  if (!confirm('確定要重置為初始種子資料？\n目前 localStorage 中的資料會被覆蓋（建議先匯出備份）。')) return;
+  db = JSON.parse(JSON.stringify(window.SEED_DATA));
+  saveDB();
+  toast('已重置為種子資料', 'success');
+  render();
+}
+
+// =================================================================
+// PWA: Service Worker
+// =================================================================
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  // SW 只能在 https 或 localhost 環境註冊，file:// 直接跳過不報錯
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    console.info('[PWA] 略過 service worker 註冊（非 https / localhost 環境）');
+    return;
+  }
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js')
+      .then((reg) => console.info('[PWA] service worker 已註冊，scope:', reg.scope))
+      .catch((err) => console.warn('[PWA] service worker 註冊失敗：', err));
+  });
+}
+
+// =================================================================
+// Init
+// =================================================================
+function init() {
+  if (!window.SEED_DATA) {
+    document.getElementById('app').innerHTML = `
+      <div class="empty">
+        <h3>找不到種子資料</h3>
+        <div>請確認 seed-data.js 與 index.html 在同一個資料夾。</div>
+      </div>`;
+    return;
+  }
+  db = loadDB();
+  // Defensive defaults
+  db.books = db.books || [];
+  db.book_pages = db.book_pages || {};
+  db.competitions = db.competitions || [];
+  db.pending_uploads = db.pending_uploads || [];
+  saveDB(); // rebuilds char_index + statistics
+
+  // Tab bindings
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => switchView(t.dataset.view));
+  });
+
+  // Toolbar bindings
+  document.getElementById('btn-export').addEventListener('click', exportJSON);
+  document.getElementById('btn-reset').addEventListener('click', resetSeed);
+  document.getElementById('btn-import').addEventListener('click', () => {
+    document.getElementById('file-import').click();
+  });
+  document.getElementById('file-import').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) importJSON(f);
+    e.target.value = '';
+  });
+
+  // Esc to close modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  render();
+  registerServiceWorker();
+}
+
+init();
+</script>
+</body>
+</html>
