@@ -659,6 +659,51 @@
     text-align: center;
     padding: 4px;
   }
+  .ocr-status {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ocr-status.pending { background: var(--accent-soft); color: var(--accent); }
+  .ocr-status.done    { background: var(--success-soft); color: var(--success); }
+  .ocr-status.failed  { background: var(--danger-soft); color: var(--danger); }
+  .spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .api-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .api-status-banner.ok { background: var(--success-soft); color: var(--success); }
+  .api-status-banner.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .api-status-banner strong { font-weight: 600; }
+  .api-status-banner a, .api-status-banner button.link {
+    color: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+  }
   .lightbox {
     position: fixed;
     inset: 0;
@@ -673,6 +718,66 @@
     max-width: 95vw;
     max-height: 95vh;
     object-fit: contain;
+  }
+
+  /* ===== 出題目（列印） ===== */
+  .sheet-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .sheet-preview-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #e9e8e6;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+    overflow: auto;
+  }
+  .print-sheet {
+    background: #fff;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+    position: relative;
+  }
+  @media print {
+    body * { visibility: hidden !important; }
+    #sheet-root, #sheet-root * { visibility: visible !important; }
+    #sheet-root {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      transform: none !important;
+      margin: 0 !important;
+    }
+    .sheet-clip { overflow: visible !important; }
+    .print-sheet { box-shadow: none !important; }
+  }
+
+  /* ===== 學生字庫分類 ===== */
+  .cat-group { margin-bottom: 20px; }
+  .cat-group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cat-group-title .badge { font-weight: 500; }
+  .char-chip.removable { cursor: pointer; }
+  .char-chip.removable:hover {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .mode-pills { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .mode-pills button.active {
+    background: var(--text);
+    color: #fff;
+    border-color: var(--text);
   }
 
   /* Responsive */
@@ -698,9 +803,12 @@
       <div class="tab" data-view="books">📚 字帖瀏覽</div>
       <div class="tab" data-view="lookup">🔍 查字</div>
       <div class="tab" data-view="upload">📸 補資料</div>
+      <div class="tab" data-view="sheet">🖨️ 出題目</div>
+      <div class="tab" data-view="students">🎓 學生</div>
     </div>
   </div>
   <div class="topbar-right">
+    <button class="ghost sm" id="btn-settings" title="AI 辨識 API 設定">⚙️ 設定</button>
     <button class="ghost sm" id="btn-export" title="把目前資料下載為 JSON 備份">⬇ 匯出 JSON</button>
     <button class="ghost sm" id="btn-import" title="從 JSON 檔還原資料">⬆ 匯入 JSON</button>
     <button class="ghost sm" id="btn-reset" title="清空 localStorage 並還原為初始資料">↺ 重置</button>
@@ -721,8 +829,46 @@
 // =================================================================
 
 const STORAGE_KEY = 'calligraphy-system-data';
+const API_STORAGE_KEY = 'calligraphy-api-config';
 
 const PAPER_SIZES = ['4K', '對K', '全開', '對開', '其他'];
+
+// AI 視覺辨識模型選項
+const AI_MODELS = [
+  { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5（便宜快速，推薦）', costHint: '一本 100 頁約 NT$3' },
+  { id: 'claude-sonnet-5',           name: 'Sonnet 5（平衡）',           costHint: '一本 100 頁約 NT$30' },
+  { id: 'claude-opus-4-8',           name: 'Opus 4.8（最準最貴）',       costHint: '一本 100 頁約 NT$150' },
+];
+
+const OCR_PROMPT = `這是一張書法字帖照片。請辨識並回傳嚴格的 JSON 格式，不要有 markdown、解釋、前綴或任何額外文字。
+
+要辨識三件事：
+1. "page"（number 或 null）：頁碼。書法字帖的頁碼通常在頁面角落，可能是阿拉伯數字（例：30）或中文數字（例：三十）。中文數字要換算成阿拉伯數字。找不到就填 null。
+2. "chars"（string[]）：這一頁上呈現的所有毛筆範字，按書寫閱讀順序（傳統上由右至左、由上至下）排列。**只放毛筆範字本身**，不要包含頁碼、頁眉、章節標題、小字說明、註記。每個元素是一個漢字字元。
+3. "topic"（string）：如果頁面上有小標題（例：「特色筆法─橫畫」、「部首-木部」、「起筆練習」），填入該標題文字；沒有就填空字串。
+
+回應範例：
+{"page": 30, "chars": ["泉", "流", "清", "出", "有"], "topic": "特色筆法─橫畫"}
+
+不確定的字可以留空。只回 JSON，其他都不要。`;
+
+// ===== 出題目（列印）常數 =====
+const PAPERS = {
+  A4: { w: 210, h: 297, label: 'A4 直式（210×297mm）' },
+  B4: { w: 257, h: 364, label: 'B4 直式（257×364mm）' },
+  A3: { w: 297, h: 420, label: 'A3 直式（297×420mm）' },
+};
+// 注意：stack 只能用單引號，因為會嵌進 HTML 的 style="..." 雙引號屬性裡
+const SHEET_FONTS = {
+  kai:  { label: '標楷體', stack: "'DFKai-SB','BiauKai','Kaiti TC','Kaiti SC','STKaiti','標楷體',serif" },
+  ming: { label: '新細明體', stack: "'PMingLiU','MingLiU','新細明體','Songti TC',serif" },
+};
+const GAN = '甲乙丙丁戊己庚辛壬癸';
+const ZHI = '子丑寅卯辰巳午未申酉戌亥';
+function ganzhiOfYear(y) { return GAN[(y - 4) % 10] + ZHI[(y - 4) % 12]; }
+const SIG_YEARS = Array.from({ length: 22 }, (_, i) => 2025 + i); // 2025~2046
+const SIG_SEASONS = ['春', '夏', '秋', '冬', '元月', '一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+const MM2PX = 3.7795;
 
 // ---------- State ----------
 let db = null;
@@ -730,10 +876,45 @@ let view = { name: 'competitions', params: {} };
 // uploadSession 跨 render 保留：含目前選的字帖、已擷取的縮圖、已儲存標記
 let uploadSession = {
   bookId: null,
-  frames: [],          // [{ id, dataURL, label, savedPage, skipped, charsInput, pageInput }]
+  frames: [],          // [{ id, dataURL, label, savedPage, skipped, charsInput, pageInput, ocrStatus, ocrError }]
   extracting: false,
+  recognizing: false,  // 正在批次辨識中
   progress: 0,
 };
+// AI 辨識設定（存 localStorage）
+let apiConfig = {
+  apiKey: '',
+  model: 'claude-haiku-4-5-20251001',
+  autoRecognize: true,   // 上傳完自動跑辨識
+};
+// 出題目設定（存 localStorage）
+const SHEET_STORAGE_KEY = 'calligraphy-sheet-config';
+let sheetConfig = {
+  type: 'lang',            // 'lang' 語文競賽 | 'k4' 4K 書法比賽
+  content: '說話是品格表現必須態度謙虛誠懇思而後言也要專注傾聽加以理解不宜貢高我慢目中無人更不可搬弄是非造謠生事',
+  paper: 'A4',
+  copies: 1,               // 同一張紙印幾份（1~3）
+  font: 'kai',
+  lineColor: 'red',
+  langPerCol: 10,          // 語文競賽：每行字數
+  langCols: 5,             // 語文競賽：行數（最少）
+  k4PerCol: 8,             // 4K：每行字數
+  showSig: true,           // 4K：顯示落款
+  sigYear: 2026,
+  sigConnector: '之',      // 之 / 年
+  sigSeason: '春',
+  sigSchool: '○○國小',
+  sigName: '○○○',
+};
+function loadSheetConfig() {
+  try {
+    const raw = localStorage.getItem(SHEET_STORAGE_KEY);
+    if (raw) sheetConfig = { ...sheetConfig, ...JSON.parse(raw) };
+  } catch (e) { /* ignore */ }
+}
+function saveSheetConfig() {
+  localStorage.setItem(SHEET_STORAGE_KEY, JSON.stringify(sheetConfig));
+}
 
 // ---------- Storage ----------
 function loadDB() {
@@ -753,6 +934,19 @@ function saveDB() {
   rebuildCharIndex();
   updateStatistics();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+}
+
+function loadApiConfig() {
+  try {
+    const raw = localStorage.getItem(API_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      apiConfig = { ...apiConfig, ...parsed };
+    }
+  } catch (e) { /* ignore */ }
+}
+function saveApiConfig() {
+  localStorage.setItem(API_STORAGE_KEY, JSON.stringify(apiConfig));
 }
 
 function rebuildCharIndex() {
@@ -848,6 +1042,9 @@ function render() {
   else if (view.name === 'book')         renderBookDetail(app, view.params.id);
   else if (view.name === 'lookup')       renderLookup(app);
   else if (view.name === 'upload')       renderUpload(app);
+  else if (view.name === 'sheet')        renderSheet(app);
+  else if (view.name === 'students')     renderStudents(app);
+  else if (view.name === 'student')      renderStudentDetail(app, view.params.id);
 }
 
 function switchView(name, params) {
@@ -1403,19 +1600,32 @@ function renderUpload(app) {
   const savedCount = uploadSession.frames.filter(f => f.savedPage).length;
   const skippedCount = uploadSession.frames.filter(f => f.skipped).length;
 
+  const hasApiKey = !!apiConfig.apiKey;
+  const apiBanner = hasApiKey
+    ? `<div class="api-status-banner ok">
+         ✨ <span>AI 自動辨識<strong>已啟用</strong>（${escapeHTML((AI_MODELS.find(m => m.id === apiConfig.model) || {}).name || apiConfig.model)}）—— 上傳後每張自動辨識頁碼和字，你只要確認就好。</span>
+         <button class="link" onclick="openApiSettings()">變更設定</button>
+       </div>`
+    : `<div class="api-status-banner warn">
+         ⚠️ <span><strong>還沒設定 API key</strong>——上傳後要你自己一張張打字。設定後改成 AI 自動辨識、只需確認。</span>
+         <button class="link" onclick="openApiSettings()">立即設定</button>
+       </div>`;
+
   app.innerHTML = `
     <div class="page-header">
       <div>
         <h1 class="page-title">📸 補資料</h1>
-        <div class="page-subtitle">上傳影片每秒擷取一張，或直接上傳照片，逐張標註頁碼與該頁的字。</div>
+        <div class="page-subtitle">上傳影片每秒擷取一張，或直接上傳照片，AI 自動辨識頁碼與該頁的字，你只要確認。</div>
       </div>
       ${uploadSession.frames.length > 0 ? `<button class="ghost" id="btn-clear-session">↺ 清空目前工作</button>` : ''}
     </div>
 
+    ${apiBanner}
+
     <div class="upload-steps">
       <div class="step ${step1Done ? 'done' : 'active'}"><span class="step-num">1</span>選擇字帖</div>
       <div class="step ${step2Done ? 'done' : (step1Done ? 'active' : '')}"><span class="step-num">2</span>上傳影片或照片</div>
-      <div class="step ${step3Done ? 'done' : (step2Done ? 'active' : '')}"><span class="step-num">3</span>逐張標註並儲存</div>
+      <div class="step ${step3Done ? 'done' : (step2Done ? 'active' : '')}"><span class="step-num">3</span>${hasApiKey ? 'AI 辨識後確認並儲存' : '逐張標註並儲存'}</div>
     </div>
 
     <div class="section">
@@ -1460,14 +1670,23 @@ function renderUpload(app) {
     ${uploadSession.frames.length > 0 ? `
       <div class="section">
         <div class="section-title">
-          步驟 3 · 逐張標註
+          步驟 3 · ${hasApiKey ? '確認 AI 辨識結果並儲存' : '逐張標註'}
           <span style="float:right;font-weight:normal;text-transform:none;letter-spacing:0;color:var(--text-soft);">
             共 ${uploadSession.frames.length} 張 · 已儲存 <strong style="color:var(--success)">${savedCount}</strong> · 跳過 ${skippedCount}
           </span>
         </div>
-        <div class="tip">
-          <strong>頁碼</strong>填數字；<strong>字</strong>用 <code>、</code>、空白、逗號或換行分隔都可以。儲存後會自動更新查字索引。
-        </div>
+        ${hasApiKey ? `
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <button class="primary" onclick="batchRecognizeAll()" ${uploadSession.recognizing ? 'disabled' : ''}>
+              ${uploadSession.recognizing ? '<span class="spinner"></span> 辨識中…' : '🤖 全部辨識（未辨識的）'}
+            </button>
+            <button onclick="saveAllRecognized()" ${uploadSession.recognizing ? 'disabled' : ''}>💾 全部儲存（已辨識的）</button>
+          </div>
+        ` : `
+          <div class="tip">
+            <strong>頁碼</strong>填數字；<strong>字</strong>用 <code>、</code>、空白、逗號或換行分隔都可以。儲存後會自動更新查字索引。
+          </div>
+        `}
         <div class="thumb-grid" id="thumb-grid">
           ${uploadSession.frames.map(f => renderThumbCard(f)).join('')}
         </div>
@@ -1522,6 +1741,21 @@ function renderThumbCard(frame) {
   const isSkipped = !!f.skipped;
   const stateClass = isSaved ? 'saved' : (isSkipped ? 'skipped' : '');
   const timeLabel = f.label || (f.timeSec != null ? `${Math.floor(f.timeSec)}s` : '');
+
+  // OCR 狀態列
+  let ocrRow = '';
+  if (!isSaved) {
+    if (f.ocrStatus === 'pending') {
+      ocrRow = `<div class="ocr-status pending"><span class="spinner"></span> AI 辨識中…</div>`;
+    } else if (f.ocrStatus === 'done') {
+      ocrRow = `<div class="ocr-status done">✨ AI 已辨識，請確認</div>`;
+    } else if (f.ocrStatus === 'failed') {
+      ocrRow = `<div class="ocr-status failed" title="${escapeHTML(f.ocrError || '')}">❌ 辨識失敗 <button class="link" data-act="retry-ocr" style="margin-left:4px;">重試</button></div>`;
+    } else if (apiConfig.apiKey) {
+      ocrRow = `<div style="text-align:center;"><button data-act="run-ocr" style="font-size:12px;padding:2px 8px;">🤖 這張辨識</button></div>`;
+    }
+  }
+
   return `
     <div class="thumb-card ${stateClass}" data-fid="${f.id}">
       <div class="thumb-img-wrap" data-act="zoom">
@@ -1536,6 +1770,7 @@ function renderThumbCard(frame) {
             <button data-act="reedit">重新編輯</button>
           </div>
         ` : `
+          ${ocrRow}
           <div class="field-row"><label>頁碼</label><input type="number" data-field="page" value="${escapeHTML(f.pageInput || '')}" placeholder="例：30" /></div>
           <div class="field-row"><label>字</label><input type="text" data-field="chars" value="${escapeHTML(f.charsInput || '')}" placeholder="例：泉、流、清、出、有" /></div>
           <div class="thumb-actions">
@@ -1569,6 +1804,8 @@ function bindThumbCardActions(card) {
         f.savedPage = null;
         f.skipped = false;
         render();
+      } else if (act === 'run-ocr' || act === 'retry-ocr') {
+        recognizeSingleFrame(f);
       }
     });
   });
@@ -1693,6 +1930,10 @@ async function handleUploadFiles(fileList) {
     uploadSession.extracting = false;
     setTimeout(() => { progressBox.style.display = 'none'; }, 600);
     render();
+    // 上傳完自動跑 AI 辨識（若有 API key 且開啟 autoRecognize）
+    if (apiConfig.apiKey && apiConfig.autoRecognize) {
+      batchRecognizeAll();
+    }
   }
 }
 
@@ -1982,6 +2223,8 @@ function importJSON(file) {
       // Ensure required fields exist
       db.competitions = db.competitions || [];
       db.pending_uploads = db.pending_uploads || [];
+      db.students = db.students || [];
+      db.char_radicals = db.char_radicals || {};
       saveDB();
       toast('匯入完成', 'success');
       render();
@@ -1998,6 +2241,1039 @@ function resetSeed() {
   db = JSON.parse(JSON.stringify(window.SEED_DATA));
   saveDB();
   toast('已重置為種子資料', 'success');
+  render();
+}
+
+// =================================================================
+// View: 🎓 學生（學習系統：已學字庫 + 分類 + 出題）
+// =================================================================
+function renderStudents(app) {
+  const students = db.students || [];
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">🎓 學生</h1>
+        <div class="page-subtitle">記錄每位學生學過的字，自動依字帖頁與部首分類，一鍵從字庫出題。</div>
+      </div>
+      <button class="primary" id="btn-add-student">➕ 新增學生</button>
+    </div>
+
+    ${students.length === 0 ? `
+      <div class="card empty">
+        <h3>還沒有學生</h3>
+        <div>點右上「新增學生」，建立第一位學生的學習檔案。</div>
+      </div>
+    ` : `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>姓名</th><th>學校 / 年級</th><th>已學字數</th><th>在字帖中</th><th>最近更新</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${students.map(s => {
+              const learned = s.learned_chars || [];
+              const inBook = learned.filter(ch => (db.char_index[ch] || []).length > 0).length;
+              return `
+                <tr data-id="${s.id}" class="student-row" style="cursor:pointer;">
+                  <td><strong>${escapeHTML(s.name)}</strong></td>
+                  <td>${escapeHTML([s.school, s.grade].filter(Boolean).join(' '))}</td>
+                  <td><span class="badge">${learned.length} 字</span></td>
+                  <td><span class="badge ok">${inBook} 字有頁碼</span></td>
+                  <td>${escapeHTML(s.updated_at || s.created_at || '—')}</td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button class="sm" data-act="view" data-id="${s.id}">查看</button>
+                      <button class="sm" data-act="edit" data-id="${s.id}">編輯</button>
+                      <button class="sm danger" data-act="del" data-id="${s.id}">刪除</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `}
+  `;
+
+  const addBtn = document.getElementById('btn-add-student');
+  if (addBtn) addBtn.onclick = () => openStudentForm(null);
+
+  app.querySelectorAll('.student-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      const id = row.dataset.id;
+      if (btn) {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'view') switchView('student', { id });
+        else if (act === 'edit') openStudentForm(id);
+        else if (act === 'del') deleteStudent(id);
+      } else {
+        switchView('student', { id });
+      }
+    });
+  });
+}
+
+function renderStudentDetail(app, id) {
+  const s = (db.students || []).find(x => x.id === id);
+  if (!s) {
+    app.innerHTML = `<div class="empty"><h3>找不到這位學生</h3>
+      <button class="sm" onclick="switchView('students')">回學生列表</button></div>`;
+    return;
+  }
+  const learned = s.learned_chars || [];
+  const inBookCount = learned.filter(ch => (db.char_index[ch] || []).length > 0).length;
+  const hasGroups = (s.char_groups || []).length > 0;
+  const mode = view.params.mode || (hasGroups ? 'groups' : 'book');   // groups | book | radical | all
+  const langN = Math.max(2, sheetConfig.langPerCol || 10) * Math.max(1, sheetConfig.langCols || 5);
+
+  let bodyHTML = '';
+  if (learned.length === 0) {
+    bodyHTML = `<div class="empty"><h3>字庫還是空的</h3><div>把學生學過的字貼進上面的欄位，按「加入字庫」。</div></div>`;
+  } else if (mode === 'groups') {
+    const groups = s.char_groups || [];
+    const groupedSet = new Set(groups.flatMap(g => g.chars));
+    const ungrouped = learned.filter(ch => !groupedSet.has(ch));
+    bodyHTML = groups.map(g => `
+      <div class="cat-group">
+        <div class="cat-group-title">
+          ✍️ ${escapeHTML(g.label || (g.chars.slice(0, 3).join('') + (g.chars.length > 3 ? '…' : '') + ' 組'))}
+          <span class="badge">${g.chars.length} 字</span>
+          <button class="ghost sm" title="改組名" onclick="renameCharGroup('${s.id}','${g.id}')">✏️</button>
+          <button class="ghost sm" title="刪除這個組（字會留在字庫）" onclick="deleteCharGroup('${s.id}','${g.id}')">✕</button>
+        </div>
+        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+      </div>
+    `).join('');
+    if (ungrouped.length > 0) {
+      bodyHTML += `
+        <div class="cat-group">
+          <div class="cat-group-title">🀄 未分組（單獨練的字）<span class="badge">${ungrouped.length} 字</span></div>
+          <div class="char-grid">${ungrouped.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+        </div>
+      `;
+    }
+    if (groups.length === 0 && ungrouped.length === 0) {
+      bodyHTML = `<div class="empty"><h3>還沒有分組</h3><div>加字時把同類型的字放同一行，就會自動成組。</div></div>`;
+    }
+  } else if (mode === 'book') {
+    const groups = groupByBookPage(learned);
+    bodyHTML = groups.map(g => `
+      <div class="cat-group">
+        <div class="cat-group-title">
+          ${g.warn ? '⚠️' : '📖'} ${escapeHTML(g.label)}
+          <span class="badge">${g.chars.length} 字</span>
+        </div>
+        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+      </div>
+    `).join('');
+  } else if (mode === 'radical') {
+    const { groups, unclassified } = groupByRadical(learned);
+    bodyHTML = groups.map(g => `
+      <div class="cat-group">
+        <div class="cat-group-title">🈶 ${escapeHTML(g.label)}</div>
+        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+      </div>
+    `).join('');
+    if (unclassified.length > 0) {
+      bodyHTML += `
+        <div class="cat-group">
+          <div class="cat-group-title">
+            ❔ 尚未分類 <span class="badge">${unclassified.length} 字</span>
+            <button class="sm" id="btn-ai-classify">🤖 AI 部首分類</button>
+            <span style="font-weight:normal;color:var(--text-faint);">（分類一次會記住，之後免費）</span>
+          </div>
+          <div class="char-grid">${unclassified.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+        </div>
+      `;
+    }
+    if (groups.length === 0 && unclassified.length === 0) {
+      bodyHTML = `<div class="empty"><h3>沒有字可以分類</h3></div>`;
+    }
+  } else {
+    bodyHTML = `
+      <div class="tip">點一下字可以把它從字庫移除（例如打錯字）。</div>
+      <div class="char-grid">
+        ${learned.map(ch => `<div class="char-chip removable" data-remove-char="${escapeHTML(ch)}">${escapeHTML(ch)}</div>`).join('')}
+      </div>
+    `;
+  }
+
+  app.innerHTML = `
+    <div class="breadcrumb">
+      <a onclick="switchView('students')">學生</a> ›
+      <span>${escapeHTML(s.name)}</span>
+    </div>
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">🎓 ${escapeHTML(s.name)}</h1>
+        <div class="page-subtitle">${escapeHTML([s.school, s.grade].filter(Boolean).join(' '))}${s.notes ? ' · ' + escapeHTML(s.notes) : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="sm" onclick="openStudentForm('${s.id}')">✏️ 編輯</button>
+        <button class="sm danger" onclick="deleteStudent('${s.id}')">🗑 刪除</button>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item"><div class="meta-label">已學字數</div><div class="meta-value">${learned.length} 字</div></div>
+      <div class="meta-item"><div class="meta-label">在字帖中有頁碼</div><div class="meta-value">${inBookCount} 字</div></div>
+      <div class="meta-item"><div class="meta-label">建立日期</div><div class="meta-value">${escapeHTML(s.created_at || '—')}</div></div>
+      <div class="meta-item"><div class="meta-label">最近更新</div><div class="meta-value">${escapeHTML(s.updated_at || '—')}</div></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🎲 從字庫出題（隨機抓字 → 跳到出題目列印）</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="primary" onclick="makeSheetFromStudent('${s.id}','lang')">🎲 出語文競賽題（${langN} 字）</button>
+        <button class="primary" onclick="makeSheetFromStudent('${s.id}','k4')">🎲 出 4K 比賽題（28 字）</button>
+      </div>
+      <div class="help" style="margin-top:6px;font-size:12px;color:var(--text-faint);">4K 題會自動把學生姓名、學校帶進落款。</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">➕ 加入學過的字</div>
+      <textarea id="student-add-chars" placeholder="把學生學過的字貼進來（會自動去重）。&#10;同類型一起練的字放同一行，例如：&#10;退逆過遊遂迷還遲道&#10;賽塞騫寨寒褰&#10;單獨練的字自己一行或用空白隔開都可以"></textarea>
+      <div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <button class="primary" onclick="addLearnedChars('${s.id}')">加入字庫</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-soft);cursor:pointer;">
+          <input type="checkbox" id="student-group-lines" checked style="width:auto;" />
+          兩個字以上的行，自動存成「同類型組」
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        已學字庫
+        <span style="float:right;font-weight:normal;text-transform:none;letter-spacing:0;color:var(--text-soft);">共 ${learned.length} 字</span>
+      </div>
+      <div class="mode-pills">
+        <button class="sm ${mode === 'groups' ? 'active' : ''}" onclick="switchView('student',{id:'${s.id}',mode:'groups'})">✍️ 老師分組</button>
+        <button class="sm ${mode === 'book' ? 'active' : ''}" onclick="switchView('student',{id:'${s.id}',mode:'book'})">📖 依字帖頁分類</button>
+        <button class="sm ${mode === 'radical' ? 'active' : ''}" onclick="switchView('student',{id:'${s.id}',mode:'radical'})">🈶 依部首分類</button>
+        <button class="sm ${mode === 'all' ? 'active' : ''}" onclick="switchView('student',{id:'${s.id}',mode:'all'})">🀄 全部（可移除）</button>
+      </div>
+      ${bodyHTML}
+    </div>
+  `;
+
+  const aiBtn = document.getElementById('btn-ai-classify');
+  if (aiBtn) aiBtn.onclick = () => aiClassifyRadicals(s.id);
+
+  app.querySelectorAll('[data-remove-char]').forEach(chip => {
+    chip.addEventListener('click', () => removeLearnedChar(s.id, chip.dataset.removeChar));
+  });
+}
+
+// ---------- Student CRUD ----------
+function openStudentForm(id) {
+  const isEdit = !!id;
+  const s = isEdit
+    ? (db.students || []).find(x => x.id === id)
+    : { id: uid('stu'), name: '', school: '', grade: '', notes: '', learned_chars: [], created_at: todayISO(), updated_at: todayISO() };
+  if (!s) return;
+  const html = `
+    <form id="student-form" class="form-grid">
+      <div class="field full">
+        <label>姓名<span class="required">*</span></label>
+        <input type="text" name="name" required value="${escapeHTML(s.name)}" placeholder="例：趙偲羽" />
+      </div>
+      <div class="field">
+        <label>學校</label>
+        <input type="text" name="school" value="${escapeHTML(s.school || '')}" placeholder="例：北成國小" />
+      </div>
+      <div class="field">
+        <label>年級</label>
+        <input type="text" name="grade" value="${escapeHTML(s.grade || '')}" placeholder="例：三年級" />
+      </div>
+      <div class="field full">
+        <label>備註</label>
+        <textarea name="notes" placeholder="（選填）">${escapeHTML(s.notes || '')}</textarea>
+      </div>
+      <div class="form-actions full">
+        <button type="button" class="ghost" onclick="closeModal()">取消</button>
+        <button type="submit" class="primary">${isEdit ? '更新' : '新增'}</button>
+      </div>
+    </form>
+  `;
+  openModal(isEdit ? '編輯學生' : '新增學生', html);
+
+  document.getElementById('student-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const updated = {
+      ...s,
+      name: fd.get('name').trim(),
+      school: fd.get('school').trim(),
+      grade: fd.get('grade').trim(),
+      notes: fd.get('notes'),
+      updated_at: todayISO(),
+    };
+    if (!isEdit) db.students.push(updated);
+    else {
+      const idx = db.students.findIndex(x => x.id === id);
+      db.students[idx] = updated;
+    }
+    saveDB();
+    closeModal();
+    toast(isEdit ? '學生已更新' : '學生已新增', 'success');
+    if (view.name === 'student') switchView('student', { id: updated.id, mode: view.params.mode });
+    else render();
+  });
+}
+
+function deleteStudent(id) {
+  const s = (db.students || []).find(x => x.id === id);
+  if (!s) return;
+  if (!confirm(`確定要刪除學生「${s.name}」？他的已學字庫（${(s.learned_chars || []).length} 字）會一併刪除。`)) return;
+  db.students = db.students.filter(x => x.id !== id);
+  saveDB();
+  toast('學生已刪除', 'success');
+  if (view.name === 'student') switchView('students');
+  else render();
+}
+
+// ---------- 字庫維護 ----------
+function addLearnedChars(studentId) {
+  const ta = document.getElementById('student-add-chars');
+  if (!ta) return;
+  const chars = extractChars(ta.value);
+  if (chars.length === 0) { toast('沒有偵測到中文字', 'error'); return; }
+  const s = db.students.find(x => x.id === studentId);
+  if (!s) return;
+  const set = new Set(s.learned_chars || []);
+  let added = 0;
+  for (const ch of chars) {
+    if (!set.has(ch)) { set.add(ch); added++; }
+  }
+  s.learned_chars = [...set];
+
+  // 兩個字以上的行 → 自動存成「同類型組」（老師的分類方式：同行＝同型一起練）
+  let groupsAdded = 0;
+  const groupLines = !!(document.getElementById('student-group-lines') || {}).checked;
+  if (groupLines) {
+    s.char_groups = s.char_groups || [];
+    for (const line of ta.value.split(/\r?\n/)) {
+      const cs = [...new Set(extractChars(line))];
+      if (cs.length >= 2) {
+        s.char_groups.push({ id: uid('grp'), label: '', chars: cs });
+        groupsAdded++;
+      }
+    }
+  }
+
+  s.updated_at = todayISO();
+  saveDB();
+  toast(`已加入 ${added} 個新字${chars.length - added > 0 ? `（${chars.length - added} 個重複已略過）` : ''}${groupsAdded ? `、${groupsAdded} 個同類型組` : ''}`, 'success');
+  switchView('student', { id: studentId, mode: groupsAdded ? 'groups' : view.params.mode });
+}
+
+function removeLearnedChar(studentId, ch) {
+  const s = db.students.find(x => x.id === studentId);
+  if (!s) return;
+  if (!confirm(`把「${ch}」從 ${s.name} 的字庫移除？`)) return;
+  s.learned_chars = (s.learned_chars || []).filter(x => x !== ch);
+  // 同步從所有分組移除；組空了就刪掉
+  s.char_groups = (s.char_groups || [])
+    .map(g => ({ ...g, chars: g.chars.filter(x => x !== ch) }))
+    .filter(g => g.chars.length > 0);
+  s.updated_at = todayISO();
+  saveDB();
+  toast(`已移除「${ch}」`, 'success');
+  switchView('student', { id: studentId, mode: 'all' });
+}
+
+function renameCharGroup(studentId, groupId) {
+  const s = db.students.find(x => x.id === studentId);
+  if (!s) return;
+  const g = (s.char_groups || []).find(x => x.id === groupId);
+  if (!g) return;
+  const name = prompt('組名（例：走之旁、寒字頭、殸字旁）', g.label || '');
+  if (name === null) return;
+  g.label = name.trim();
+  s.updated_at = todayISO();
+  saveDB();
+  switchView('student', { id: studentId, mode: 'groups' });
+}
+
+function deleteCharGroup(studentId, groupId) {
+  const s = db.students.find(x => x.id === studentId);
+  if (!s) return;
+  const g = (s.char_groups || []).find(x => x.id === groupId);
+  if (!g) return;
+  if (!confirm(`刪除「${g.label || g.chars.slice(0, 3).join('') + '…組'}」？（${g.chars.length} 個字仍會留在字庫）`)) return;
+  s.char_groups = s.char_groups.filter(x => x.id !== groupId);
+  s.updated_at = todayISO();
+  saveDB();
+  switchView('student', { id: studentId, mode: 'groups' });
+}
+
+// ---------- 分類 ----------
+// 依字帖頁分組：同頁的字書法結構相近（字帖本身就是分類）
+function groupByBookPage(chars) {
+  const groups = {};
+  const none = [];
+  for (const ch of chars) {
+    const entries = (db.char_index && db.char_index[ch]) || [];
+    if (entries.length === 0) { none.push(ch); continue; }
+    const e = entries[0];
+    const pageData = (db.book_pages[e.book_id] || {})[String(e.page)] || {};
+    const label = `${bookNameById(e.book_id)}｜第 ${e.page} 頁${pageData.topic ? `（${pageData.topic}）` : ''}`;
+    const key = `${e.book_id}#${String(e.page).padStart(4, '0')}`;
+    (groups[key] = groups[key] || { label, chars: [] }).chars.push(ch);
+  }
+  const sorted = Object.keys(groups).sort().map(k => groups[k]);
+  if (none.length > 0) sorted.push({ label: '未收錄在任何字帖（可到補資料補頁碼）', chars: none, warn: true });
+  return sorted;
+}
+
+// 依部首分組（用 db.char_radicals 快取；沒分類的列在 unclassified）
+function groupByRadical(chars) {
+  const groups = {};
+  const unclassified = [];
+  for (const ch of chars) {
+    const rad = (db.char_radicals || {})[ch];
+    if (!rad) { unclassified.push(ch); continue; }
+    (groups[rad] = groups[rad] || []).push(ch);
+  }
+  const sorted = Object.entries(groups)
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([rad, cs]) => ({ label: `${rad} 部（${cs.length} 字）`, chars: cs }));
+  return { groups: sorted, unclassified };
+}
+
+// 用 Claude 把還沒分類的字配部首，結果存 db.char_radicals（跨學生共用、只花一次）
+async function aiClassifyRadicals(studentId) {
+  if (!apiConfig.apiKey) {
+    toast('請先到 ⚙️ 設定填入 API key', 'error');
+    openApiSettings();
+    return;
+  }
+  const s = (db.students || []).find(x => x.id === studentId);
+  if (!s) return;
+  const unclassified = (s.learned_chars || []).filter(ch => !(db.char_radicals || {})[ch]);
+  if (unclassified.length === 0) { toast('沒有需要分類的字', 'success'); return; }
+  const btn = document.getElementById('btn-ai-classify');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 分類中…'; }
+  try {
+    const CHUNK = 150;
+    for (let i = 0; i < unclassified.length; i += CHUNK) {
+      const batch = unclassified.slice(i, i + CHUNK);
+      const prompt = `以下是一批繁體中文字，請判斷每個字的康熙部首。回傳嚴格 JSON 物件，key 是字、value 是部首，例如 {"清":"水","把":"手","想":"心"}。每個字都要有。不要 markdown、不要解釋，只回 JSON。\n\n字：${batch.join('')}`;
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiConfig.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: apiConfig.model,
+          max_tokens: 4096,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!resp.ok) {
+        const t = await resp.text().catch(() => '');
+        throw new Error(`API ${resp.status}: ${t.slice(0, 150)}`);
+      }
+      const data = await resp.json();
+      const text = (data.content && data.content[0] && data.content[0].text) || '';
+      const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+      const map = JSON.parse(cleaned);
+      db.char_radicals = db.char_radicals || {};
+      for (const [ch, rad] of Object.entries(map)) {
+        if (typeof rad === 'string' && rad.trim()) db.char_radicals[ch] = rad.trim();
+      }
+      saveDB();
+    }
+    toast('部首分類完成', 'success');
+  } catch (e) {
+    console.error(e);
+    toast('分類失敗：' + e.message, 'error');
+  }
+  switchView('student', { id: studentId, mode: 'radical' });
+}
+
+// ---------- 從字庫出題 ----------
+function makeSheetFromStudent(id, type) {
+  const s = (db.students || []).find(x => x.id === id);
+  if (!s) return;
+  const pool = [...(s.learned_chars || [])];
+  if (pool.length === 0) { toast('這位學生的字庫還是空的', 'error'); return; }
+  const want = type === 'lang'
+    ? Math.max(2, sheetConfig.langPerCol || 10) * Math.max(1, sheetConfig.langCols || 5)
+    : 28;
+  // Fisher-Yates 洗牌
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const picked = pool.slice(0, Math.min(want, pool.length));
+  sheetConfig.type = type;
+  sheetConfig.content = picked.join('');
+  if (type === 'k4') {
+    if (s.school) sheetConfig.sigSchool = s.school;
+    if (s.name) sheetConfig.sigName = s.name;
+  }
+  saveSheetConfig();
+  switchView('sheet');
+  toast(`已從 ${s.name} 的字庫隨機抓 ${picked.length} 字${picked.length < want ? `（字庫共 ${s.learned_chars.length} 字，不足 ${want}）` : ''}`, 'success');
+}
+
+// =================================================================
+// View: 🖨️ 出題目（比賽題目單列印）
+// =================================================================
+function renderSheet(app) {
+  const isLang = sheetConfig.type === 'lang';
+  const comps = db.competitions || [];
+  const chars = extractChars(sheetConfig.content || '');
+
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">🖨️ 出題目</h1>
+        <div class="page-subtitle">貼上題目文字，選格式與紙張，直接列印給學生看著練習。標點符號會自動忽略。</div>
+      </div>
+      <button class="primary" onclick="printSheet()">🖨️ 列印</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">題型與內容</div>
+      <div class="sheet-controls">
+        <div class="field">
+          <label>題型</label>
+          <select id="sheet-type">
+            <option value="lang" ${isLang ? 'selected' : ''}>語文競賽（直式方格）</option>
+            <option value="k4" ${!isLang ? 'selected' : ''}>4K 書法比賽（含落款）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>從現有比賽帶入</label>
+          <select id="sheet-from-comp">
+            <option value="">（不帶入，自己貼字）</option>
+            ${comps.map(c => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}（${c.year || ''}）</option>`).join('')}
+          </select>
+        </div>
+        ${isLang ? `
+          <div class="field">
+            <label>每行字數</label>
+            <input type="number" id="sheet-lang-percol" min="2" max="20" value="${sheetConfig.langPerCol}" />
+          </div>
+          <div class="field">
+            <label>行數（最少）</label>
+            <input type="number" id="sheet-lang-cols" min="1" max="12" value="${sheetConfig.langCols}" />
+          </div>
+        ` : `
+          <div class="field">
+            <label>每行字數</label>
+            <input type="number" id="sheet-k4-percol" min="2" max="14" value="${sheetConfig.k4PerCol}" />
+          </div>
+        `}
+      </div>
+      <div class="field">
+        <label>題目文字　<span id="sheet-char-count" style="font-weight:normal;color:var(--text-faint);">共 ${chars.length} 個字</span></label>
+        <textarea id="sheet-content" placeholder="貼上題目文字，標點與空白會自動忽略">${escapeHTML(sheetConfig.content || '')}</textarea>
+      </div>
+    </div>
+
+    ${!isLang ? `
+      <div class="section">
+        <div class="section-title">落款設定</div>
+        <div class="sheet-controls">
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="sheet-show-sig" ${sheetConfig.showSig ? 'checked' : ''} style="width:auto;" />
+              <span>顯示落款</span>
+            </label>
+          </div>
+          <div class="field">
+            <label>年份（自動配天干地支）</label>
+            <select id="sheet-sig-year" ${sheetConfig.showSig ? '' : 'disabled'}>
+              ${SIG_YEARS.map(y => `<option value="${y}" ${y === sheetConfig.sigYear ? 'selected' : ''}>${y}（${ganzhiOfYear(y)}）</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>連接字</label>
+            <select id="sheet-sig-connector" ${sheetConfig.showSig ? '' : 'disabled'}>
+              <option value="之" ${sheetConfig.sigConnector === '之' ? 'selected' : ''}>之（丙午之春）</option>
+              <option value="年" ${sheetConfig.sigConnector === '年' ? 'selected' : ''}>年（丙午年春）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>時節 / 月份</label>
+            <select id="sheet-sig-season" ${sheetConfig.showSig ? '' : 'disabled'}>
+              ${SIG_SEASONS.map(s => `<option value="${s}" ${s === sheetConfig.sigSeason ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>學校</label>
+            <input type="text" id="sheet-sig-school" value="${escapeHTML(sheetConfig.sigSchool)}" placeholder="○○國小" ${sheetConfig.showSig ? '' : 'disabled'} />
+          </div>
+          <div class="field">
+            <label>姓名</label>
+            <input type="text" id="sheet-sig-name" value="${escapeHTML(sheetConfig.sigName)}" placeholder="○○○" ${sheetConfig.showSig ? '' : 'disabled'} />
+          </div>
+        </div>
+        <div class="tip">落款預覽：<strong id="sheet-sig-preview">${escapeHTML(buildSigLines().join('　'))}</strong>（直式印在左下角）</div>
+      </div>
+    ` : ''}
+
+    <div class="section">
+      <div class="section-title">紙張與列印</div>
+      <div class="sheet-controls">
+        <div class="field">
+          <label>紙張大小</label>
+          <select id="sheet-paper">
+            ${Object.entries(PAPERS).map(([k, p]) => `<option value="${k}" ${k === sheetConfig.paper ? 'selected' : ''}>${p.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>同一張紙印幾份</label>
+          <select id="sheet-copies">
+            <option value="1" ${sheetConfig.copies === 1 ? 'selected' : ''}>1 份（整張）</option>
+            <option value="2" ${sheetConfig.copies === 2 ? 'selected' : ''}>2 份（裁 1 刀）</option>
+            <option value="3" ${sheetConfig.copies === 3 ? 'selected' : ''}>3 份（裁 2 刀）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>字型</label>
+          <select id="sheet-font">
+            ${Object.entries(SHEET_FONTS).map(([k, f]) => `<option value="${k}" ${k === sheetConfig.font ? 'selected' : ''}>${f.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>格線顏色</label>
+          <select id="sheet-linecolor">
+            <option value="red" ${sheetConfig.lineColor === 'red' ? 'selected' : ''}>紅色（傳統）</option>
+            <option value="black" ${sheetConfig.lineColor === 'black' ? 'selected' : ''}>黑色</option>
+          </select>
+        </div>
+      </div>
+      <div class="tip">🖨️ 列印時：「邊界」選<strong>無</strong>、「縮放」選 <strong>100%（實際大小）</strong>、勾選<strong>背景圖形</strong>，格線才會照尺寸印出來。</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">預覽</div>
+      <div id="sheet-warn" style="color:var(--danger);font-size:13px;margin-bottom:8px;"></div>
+      <div id="sheet-preview-container"></div>
+    </div>
+  `;
+
+  // ---- bindings ----
+  const bindChange = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', fn);
+  };
+  bindChange('sheet-type', (e) => { sheetConfig.type = e.target.value; saveSheetConfig(); render(); });
+  bindChange('sheet-from-comp', (e) => {
+    const c = comps.find(x => x.id === e.target.value);
+    if (c) { sheetConfig.content = c.poem_text || ''; saveSheetConfig(); render(); }
+  });
+  bindChange('sheet-lang-percol', (e) => { sheetConfig.langPerCol = parseInt(e.target.value, 10) || 10; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-lang-cols', (e) => { sheetConfig.langCols = parseInt(e.target.value, 10) || 5; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-k4-percol', (e) => { sheetConfig.k4PerCol = parseInt(e.target.value, 10) || 8; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-paper', (e) => { sheetConfig.paper = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-copies', (e) => { sheetConfig.copies = parseInt(e.target.value, 10) || 1; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-font', (e) => { sheetConfig.font = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-linecolor', (e) => { sheetConfig.lineColor = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-show-sig', (e) => { sheetConfig.showSig = e.target.checked; saveSheetConfig(); render(); });
+  bindChange('sheet-sig-year', (e) => { sheetConfig.sigYear = parseInt(e.target.value, 10) || 2026; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-sig-connector', (e) => { sheetConfig.sigConnector = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-sig-season', (e) => { sheetConfig.sigSeason = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+
+  // 打字即時更新（不整頁重繪，避免失焦）
+  const contentEl = document.getElementById('sheet-content');
+  if (contentEl) contentEl.addEventListener('input', () => {
+    sheetConfig.content = contentEl.value;
+    saveSheetConfig();
+    updateSheetPreview();
+  });
+  const schoolEl = document.getElementById('sheet-sig-school');
+  if (schoolEl) schoolEl.addEventListener('input', () => {
+    sheetConfig.sigSchool = schoolEl.value;
+    saveSheetConfig();
+    updateSheetPreview();
+  });
+  const nameEl = document.getElementById('sheet-sig-name');
+  if (nameEl) nameEl.addEventListener('input', () => {
+    sheetConfig.sigName = nameEl.value;
+    saveSheetConfig();
+    updateSheetPreview();
+  });
+
+  updateSheetPreview();
+}
+
+// 落款文字行（右→左：年份時節、學校、姓名）
+function buildSigLines() {
+  const yearLine = `${ganzhiOfYear(sheetConfig.sigYear)}${sheetConfig.sigConnector}${sheetConfig.sigSeason}`;
+  return [yearLine, (sheetConfig.sigSchool || '').trim(), (sheetConfig.sigName || '').trim()].filter(Boolean);
+}
+
+function updateSheetPreview() {
+  const box = document.getElementById('sheet-preview-container');
+  if (!box) return;
+  const { html, W, H, warn } = buildSheetHTML();
+  const s = Math.min(1, 620 / (W * MM2PX));
+  box.innerHTML = `
+    <div class="sheet-preview-wrap">
+      <div class="sheet-clip" style="width:${(W * MM2PX * s).toFixed(0)}px;height:${(H * MM2PX * s).toFixed(0)}px;overflow:hidden;">
+        <div id="sheet-root" style="transform:scale(${s});transform-origin:top left;">${html}</div>
+      </div>
+    </div>
+  `;
+  const cnt = document.getElementById('sheet-char-count');
+  if (cnt) cnt.textContent = `共 ${extractChars(sheetConfig.content || '').length} 個字`;
+  const w = document.getElementById('sheet-warn');
+  if (w) w.textContent = warn || '';
+  const sp = document.getElementById('sheet-sig-preview');
+  if (sp) sp.textContent = buildSigLines().join('　');
+}
+
+// 產生整張題目單 HTML（mm 精準排版，直接可印）
+function buildSheetHTML() {
+  const paper = PAPERS[sheetConfig.paper] || PAPERS.A4;
+  const W = paper.w, H = paper.h, M = 10, GAP = 6;
+  const n = Math.max(1, Math.min(3, sheetConfig.copies || 1));
+  const availW = W - M * 2, availH = H - M * 2;
+  const copyW = (availW - GAP * (n - 1)) / n, copyH = availH;
+  const chars = extractChars(sheetConfig.content || '');
+  const fontStack = (SHEET_FONTS[sheetConfig.font] || SHEET_FONTS.kai).stack;
+  const line = sheetConfig.lineColor === 'black' ? '#333333' : '#c0392b';
+  let copyInner = '', warn = '';
+
+  if (sheetConfig.type === 'lang') {
+    const perCol = Math.max(2, sheetConfig.langPerCol || 10);
+    const minCols = Math.max(1, sheetConfig.langCols || 5);
+    const cols = Math.max(minCols, Math.ceil(chars.length / perCol) || minCols);
+    if (chars.length > perCol * minCols) {
+      warn = `字數 ${chars.length} 超過 ${minCols} 行 × ${perCol} 字 = ${perCol * minCols} 字，已自動增加為 ${cols} 行`;
+    }
+    copyInner = buildGridHTML(chars, cols, perCol, copyW, copyH, line, fontStack, null);
+  } else {
+    const perCol = Math.max(2, sheetConfig.k4PerCol || 8);
+    const poemCols = Math.max(1, Math.ceil(chars.length / perCol));
+    let sigInfo = null;
+    if (sheetConfig.showSig) {
+      const lines = buildSigLines();
+      if (lines.length > 0) {
+        const emptyInLast = poemCols * perCol - chars.length;
+        if (emptyInLast >= 3) {
+          sigInfo = { lines, startRow: chars.length % perCol, totalCols: poemCols };
+        } else {
+          // 最後一行太滿，左邊多加一行放落款
+          sigInfo = { lines, startRow: Math.min(2, Math.max(0, perCol - 4)), totalCols: poemCols + 1 };
+        }
+      }
+    }
+    const totalCols = sigInfo ? sigInfo.totalCols : poemCols;
+    copyInner = buildGridHTML(chars, totalCols, perCol, copyW, copyH, line, fontStack, sigInfo);
+  }
+
+  // 組合 n 份（左右並排，中間放裁切虛線）
+  let inner = '';
+  for (let i = 0; i < n; i++) {
+    const x = M + i * (copyW + GAP);
+    inner += `<div style="position:absolute;left:${x.toFixed(2)}mm;top:${M}mm;width:${copyW.toFixed(2)}mm;height:${copyH.toFixed(2)}mm;">${copyInner}</div>`;
+    if (i < n - 1) {
+      const cx = x + copyW + GAP / 2;
+      inner += `<div style="position:absolute;left:${cx.toFixed(2)}mm;top:${M}mm;height:${copyH.toFixed(2)}mm;border-left:0.2mm dashed #aaaaaa;"></div>`;
+    }
+  }
+  const html = `<div class="print-sheet" style="width:${W}mm;height:${H}mm;">${inner}</div>`;
+  return { html, W, H, warn };
+}
+
+// 直式方格：由右至左、由上至下填字；sigInfo 有值時在最左行下方放直式落款
+function buildGridHTML(chars, totalCols, perCol, areaW, areaH, line, fontStack, sigInfo) {
+  const cell = Math.min(areaW / totalCols, areaH / perCol);
+  const gw = cell * totalCols, gh = cell * perCol;
+  const ox = (areaW - gw) / 2, oy = (areaH - gh) / 2;
+  const fs = cell * 0.72;
+  let out = '';
+
+  // 外框
+  out += `<div style="position:absolute;left:${ox.toFixed(2)}mm;top:${oy.toFixed(2)}mm;width:${gw.toFixed(2)}mm;height:${gh.toFixed(2)}mm;border:0.45mm solid ${line};box-sizing:border-box;"></div>`;
+
+  // 格子與字
+  for (let cssCol = 0; cssCol < totalCols; cssCol++) {
+    const colFromRight = totalCols - 1 - cssCol;
+    for (let row = 0; row < perCol; row++) {
+      const idx = colFromRight * perCol + row;
+      const ch = idx < chars.length ? chars[idx] : '';
+      const x = ox + cssCol * cell, y = oy + row * cell;
+      const borders =
+        (cssCol < totalCols - 1 ? `border-right:0.15mm solid ${line};` : '') +
+        (row < perCol - 1 ? `border-bottom:0.15mm solid ${line};` : '');
+      out += `<div style="position:absolute;left:${x.toFixed(2)}mm;top:${y.toFixed(2)}mm;width:${cell.toFixed(2)}mm;height:${cell.toFixed(2)}mm;${borders}box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-family:${fontStack};font-size:${fs.toFixed(2)}mm;line-height:1;color:#1a1a1a;">${escapeHTML(ch)}</div>`;
+    }
+  }
+
+  // 落款（直式，右到左依序：年份時節 → 學校 → 姓名）
+  if (sigInfo && sigInfo.lines.length > 0) {
+    const startRow = Math.max(0, Math.min(perCol - 1, sigInfo.startRow));
+    const sx = ox, sy = oy + startRow * cell;
+    const sh = (perCol - startRow) * cell;
+    const sigFs = cell * 0.22;
+    out += `
+      <div style="position:absolute;left:${sx.toFixed(2)}mm;top:${sy.toFixed(2)}mm;width:${cell.toFixed(2)}mm;height:${sh.toFixed(2)}mm;box-sizing:border-box;padding:${(cell * 0.12).toFixed(2)}mm;display:flex;justify-content:center;">
+        <div style="writing-mode:vertical-rl;text-orientation:upright;font-family:${fontStack};font-size:${sigFs.toFixed(2)}mm;line-height:1.35;color:#1a1a1a;height:100%;">
+          ${sigInfo.lines.map(l => `<div>${escapeHTML(l)}</div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  return out;
+}
+
+function printSheet() {
+  const paper = PAPERS[sheetConfig.paper] || PAPERS.A4;
+  let st = document.getElementById('page-size-style');
+  if (!st) {
+    st = document.createElement('style');
+    st.id = 'page-size-style';
+    document.head.appendChild(st);
+  }
+  st.textContent = `@page { size: ${paper.w}mm ${paper.h}mm; margin: 0; }`;
+  window.print();
+}
+
+// =================================================================
+// AI 辨識設定 · Claude Vision API 呼叫
+// =================================================================
+function openApiSettings() {
+  const modelOptions = AI_MODELS.map(m =>
+    `<option value="${m.id}" ${m.id === apiConfig.model ? 'selected' : ''}>${escapeHTML(m.name)}</option>`
+  ).join('');
+  const currentModelInfo = AI_MODELS.find(m => m.id === apiConfig.model) || AI_MODELS[0];
+
+  const html = `
+    <form id="api-settings-form">
+      <div class="tip" style="margin-bottom:16px;">
+        設定 <strong>Anthropic API key</strong> 之後，「📸 補資料」上傳的每張照片會自動辨識頁碼與該頁的字，你只要確認就好。
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label>Anthropic API Key <span class="required">*</span></label>
+        <input type="password" name="apiKey" value="${escapeHTML(apiConfig.apiKey)}" placeholder="sk-ant-api03-xxxxxxxx..." autocomplete="off" spellcheck="false" />
+        <div class="help">
+          沒有 key 嗎？到 <strong>console.anthropic.com</strong> 註冊帳號並儲值（$5 美金就夠用很久），
+          在 Settings → API Keys 建立一把貼進來。<br>
+          🔒 Key 只存在這台裝置的瀏覽器（localStorage），不會傳到其他地方。
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label>使用模型</label>
+        <select name="model">${modelOptions}</select>
+        <div class="help" id="model-cost-hint">${escapeHTML(currentModelInfo.costHint)}</div>
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal;">
+          <input type="checkbox" name="autoRecognize" ${apiConfig.autoRecognize ? 'checked' : ''} style="width:auto;" />
+          <span>上傳照片/影片後自動辨識</span>
+        </label>
+        <div class="help">關掉的話還是可以按「🤖 全部辨識」手動觸發。</div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="ghost" onclick="closeModal()">取消</button>
+        <button type="button" class="sm" id="btn-test-api">🧪 測試連線</button>
+        <button type="submit" class="primary">儲存設定</button>
+      </div>
+    </form>
+  `;
+  openModal('AI 辨識設定', html);
+
+  const form = document.getElementById('api-settings-form');
+  form.querySelector('[name="model"]').addEventListener('change', (e) => {
+    const info = AI_MODELS.find(m => m.id === e.target.value);
+    document.getElementById('model-cost-hint').textContent = info ? info.costHint : '';
+  });
+  document.getElementById('btn-test-api').addEventListener('click', async () => {
+    const key = form.querySelector('[name="apiKey"]').value.trim();
+    const model = form.querySelector('[name="model"]').value;
+    if (!key) { toast('請先貼 API key', 'error'); return; }
+    toast('測試中…');
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 20,
+          messages: [{ role: 'user', content: 'reply with just OK' }],
+        }),
+      });
+      if (resp.ok) {
+        toast('✅ API 連線成功', 'success');
+      } else {
+        const t = await resp.text().catch(() => '');
+        toast(`❌ API ${resp.status}: ${t.slice(0, 120)}`, 'error');
+      }
+    } catch (e) {
+      toast('❌ 連線失敗：' + e.message, 'error');
+    }
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    apiConfig.apiKey = form.querySelector('[name="apiKey"]').value.trim();
+    apiConfig.model = form.querySelector('[name="model"]').value;
+    apiConfig.autoRecognize = form.querySelector('[name="autoRecognize"]').checked;
+    saveApiConfig();
+    closeModal();
+    toast('設定已儲存', 'success');
+    if (view.name === 'upload') render();
+  });
+}
+
+async function recognizeFrame(dataURL) {
+  if (!apiConfig.apiKey) throw new Error('尚未設定 API key');
+  const [meta, base64] = dataURL.split(',');
+  const mimeMatch = /data:(image\/[a-z]+);base64/i.exec(meta || '');
+  const mediaType = mimeMatch ? mimeMatch[1].toLowerCase() : 'image/jpeg';
+  const body = {
+    model: apiConfig.model,
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+        { type: 'text', text: OCR_PROMPT },
+      ],
+    }],
+  };
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiConfig.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => '');
+    throw new Error(`API ${resp.status}: ${t.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const text = (data.content && data.content[0] && data.content[0].text) || '';
+  // 有時模型會用 ```json ... ``` 包起來，先剝掉
+  const cleaned = text.trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/, '')
+    .replace(/\s*```$/, '');
+  let parsed;
+  try { parsed = JSON.parse(cleaned); }
+  catch (e) { throw new Error('AI 回傳的不是合法 JSON：' + text.slice(0, 120)); }
+  return {
+    page: (typeof parsed.page === 'number' && parsed.page > 0) ? parsed.page : null,
+    chars: Array.isArray(parsed.chars)
+      ? parsed.chars.filter(c => typeof c === 'string' && c.trim().length > 0).map(c => c.trim())
+      : [],
+    topic: typeof parsed.topic === 'string' ? parsed.topic : '',
+  };
+}
+
+async function recognizeSingleFrame(frame) {
+  frame.ocrStatus = 'pending';
+  frame.ocrError = null;
+  render();
+  try {
+    const result = await recognizeFrame(frame.dataURL);
+    frame.ocrStatus = 'done';
+    if (result.page != null) frame.pageInput = String(result.page);
+    if (result.chars.length > 0) frame.charsInput = result.chars.join('、');
+    frame.ocrTopic = result.topic || '';
+  } catch (e) {
+    frame.ocrStatus = 'failed';
+    frame.ocrError = e.message;
+  }
+  render();
+}
+
+async function batchRecognizeAll() {
+  if (!apiConfig.apiKey) { toast('請先到 ⚙️ 設定填入 API key', 'error'); return; }
+  if (uploadSession.recognizing) { toast('已經在辨識中', 'error'); return; }
+  const targets = uploadSession.frames.filter(f =>
+    !f.savedPage && !f.skipped && f.ocrStatus !== 'pending' && f.ocrStatus !== 'done'
+  );
+  if (targets.length === 0) { toast('沒有需要辨識的縮圖', 'error'); return; }
+  uploadSession.recognizing = true;
+  render();
+  // 並行 2 個以免打太快被 rate limit
+  const CONCURRENCY = 2;
+  let idx = 0;
+  let done = 0;
+  async function worker() {
+    while (idx < targets.length) {
+      const my = idx++;
+      const f = targets[my];
+      f.ocrStatus = 'pending';
+      f.ocrError = null;
+      render();
+      try {
+        const result = await recognizeFrame(f.dataURL);
+        f.ocrStatus = 'done';
+        if (result.page != null) f.pageInput = String(result.page);
+        if (result.chars.length > 0) f.charsInput = result.chars.join('、');
+        f.ocrTopic = result.topic || '';
+      } catch (e) {
+        f.ocrStatus = 'failed';
+        f.ocrError = e.message;
+      }
+      done++;
+      render();
+    }
+  }
+  const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, () => worker());
+  await Promise.all(workers);
+  uploadSession.recognizing = false;
+  const okCount = targets.filter(f => f.ocrStatus === 'done').length;
+  const failCount = targets.filter(f => f.ocrStatus === 'failed').length;
+  toast(`辨識完成：成功 ${okCount}、失敗 ${failCount}`, failCount > 0 ? 'error' : 'success');
+  render();
+}
+
+// 一鍵儲存所有已辨識、有有效頁碼和字的縮圖
+async function saveAllRecognized() {
+  const targets = uploadSession.frames.filter(f =>
+    !f.savedPage && !f.skipped && f.ocrStatus === 'done'
+    && f.pageInput && parseInt(f.pageInput, 10) > 0
+    && parseCharString(f.charsInput || '').length > 0
+  );
+  if (targets.length === 0) { toast('沒有可以儲存的縮圖', 'error'); return; }
+  // 檢查覆蓋衝突
+  const conflicts = targets.filter(f => {
+    const page = parseInt(f.pageInput, 10);
+    const existing = (db.book_pages[uploadSession.bookId] || {})[String(page)];
+    return existing && existing.chars && existing.chars.length > 0;
+  });
+  if (conflicts.length > 0) {
+    if (!confirm(`有 ${conflicts.length} 張的頁碼已經在字帖裡有資料，繼續會覆蓋。確定？`)) return;
+  }
+  let ok = 0;
+  for (const f of targets) {
+    const page = parseInt(f.pageInput, 10);
+    const chars = parseCharString(f.charsInput);
+    savePage(uploadSession.bookId, page, chars, f.ocrTopic || '');
+    f.savedPage = page;
+    ok++;
+  }
+  toast(`已儲存 ${ok} 張`, 'success');
   render();
 }
 
@@ -2036,7 +3312,12 @@ function init() {
   db.book_pages = db.book_pages || {};
   db.competitions = db.competitions || [];
   db.pending_uploads = db.pending_uploads || [];
+  db.students = db.students || [];
+  db.char_radicals = db.char_radicals || {};   // 字 → 部首（AI 分類快取，全學生共用）
   saveDB(); // rebuilds char_index + statistics
+
+  loadApiConfig();
+  loadSheetConfig();
 
   // Tab bindings
   document.querySelectorAll('.tab').forEach(t => {
@@ -2044,6 +3325,7 @@ function init() {
   });
 
   // Toolbar bindings
+  document.getElementById('btn-settings').addEventListener('click', openApiSettings);
   document.getElementById('btn-export').addEventListener('click', exportJSON);
   document.getElementById('btn-reset').addEventListener('click', resetSeed);
   document.getElementById('btn-import').addEventListener('click', () => {
