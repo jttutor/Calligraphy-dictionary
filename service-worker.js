@@ -1,6 +1,6 @@
 // 兆婷藝術學院 - 書法比賽管理系統 PWA service worker
 // 改檔案後請把 VERSION 數字 +1，再 push，iPad 才會抓到新版
-const VERSION = 'v5';
+const VERSION = 'v6';
 const CACHE_NAME = 'calligraphy-' + VERSION;
 const SCOPE_BASE = self.registration.scope; // e.g. https://user.github.io/calligraphy/
 const ASSETS = [

@@ -773,6 +773,25 @@
     border-color: var(--danger);
     color: var(--danger);
   }
+  .char-chip.tappable { cursor: pointer; }
+  .char-chip.tappable:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .char-chip.learned {
+    background: var(--success-soft);
+    border-color: var(--success);
+    color: var(--success);
+    position: relative;
+  }
+  .char-chip.learned::after {
+    content: '✓';
+    position: absolute;
+    top: 2px;
+    right: 5px;
+    font-size: 11px;
+    font-family: sans-serif;
+  }
   .mode-pills { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
   .mode-pills button.active {
     background: var(--text);
@@ -1399,6 +1418,12 @@ function renderBookDetail(app, bookId) {
   const selectedPage = view.params.page != null
     ? String(view.params.page)
     : (pageNumbers[0] != null ? String(pageNumbers[0]) : null);
+  // 標記已學：選定的學生
+  const stuId = view.params.stu || '';
+  const stuMarker = stuId ? (db.students || []).find(x => x.id === stuId) : null;
+  const bookSet = bookCharSet(bookId);
+  const bookLearnedCount = stuMarker ? (stuMarker.learned_chars || []).filter(ch => bookSet.has(ch)).length : 0;
+  const bookPct = bookSet.size > 0 ? Math.round(bookLearnedCount / bookSet.size * 100) : 0;
 
   app.innerHTML = `
     <div class="breadcrumb">
@@ -1428,6 +1453,18 @@ function renderBookDetail(app, bookId) {
       <div class="empty"><h3>還沒有頁碼資料</h3><div>Phase 2 將支援上傳影片/照片補資料。</div></div>
     ` : `
       <div class="section">
+        <div class="section-title">✓ 標記學生已學的字</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <select id="book-mark-student" style="max-width:280px;">
+            <option value="">（選擇學生後，點頁面上的字標記已學）</option>
+            ${(db.students || []).map(st => `<option value="${escapeHTML(st.id)}" ${st.id === stuId ? 'selected' : ''}>${escapeHTML(st.name)}${st.school ? `（${escapeHTML(st.school)}）` : ''}</option>`).join('')}
+          </select>
+          ${stuMarker ? `<span class="badge ok">${escapeHTML(stuMarker.name)}：全書已學 ${bookLearnedCount}/${bookSet.size} 字（${bookPct}%）</span>
+          <button class="sm ghost" onclick="switchView('student',{id:'${stuMarker.id}'})">→ 看他的字庫</button>` : ''}
+        </div>
+      </div>
+
+      <div class="section">
         <div class="section-title">頁碼導覽（點擊查看該頁）</div>
         <div class="page-pill-grid" id="page-pills">
           ${pageNumbers.map(p => `
@@ -1436,29 +1473,53 @@ function renderBookDetail(app, bookId) {
         </div>
       </div>
 
-      ${selectedPage ? renderPageContent(bookId, selectedPage) : ''}
+      ${selectedPage ? renderPageContent(bookId, selectedPage, stuId) : ''}
     `}
   `;
 
   app.querySelectorAll('.page-pill').forEach(p => {
-    p.addEventListener('click', () => switchView('book', { id: bookId, page: parseInt(p.dataset.page, 10) }));
+    p.addEventListener('click', () => switchView('book', { id: bookId, page: parseInt(p.dataset.page, 10), stu: stuId || undefined }));
+  });
+
+  // 標記已學：學生選擇 + 點字切換
+  const markSel = document.getElementById('book-mark-student');
+  if (markSel) {
+    markSel.addEventListener('change', () => {
+      switchView('book', {
+        id: bookId,
+        page: selectedPage != null ? parseInt(selectedPage, 10) : undefined,
+        stu: markSel.value || undefined,
+      });
+    });
+  }
+  app.querySelectorAll('[data-mark-char]').forEach(chip => {
+    chip.addEventListener('click', () => toggleLearnedFromBook(stuId, chip.dataset.markChar, bookId, selectedPage));
   });
 }
 
-function renderPageContent(bookId, pageStr) {
+function renderPageContent(bookId, pageStr, stuId) {
   const pageData = (db.book_pages[bookId] || {})[pageStr];
   if (!pageData) return '';
+  const stu = stuId ? (db.students || []).find(x => x.id === stuId) : null;
+  const learnedSet = stu ? new Set(stu.learned_chars || []) : null;
+  const chars = pageData.chars || [];
+  const learnedOnPage = stu ? chars.filter(ch => learnedSet.has(ch)).length : 0;
   return `
     <div class="section">
       <div class="section-title">
         第 ${pageStr} 頁
         <span style="float:right;font-weight:normal;text-transform:none;letter-spacing:0;color:var(--text-soft)">
+          ${stu ? `<span class="badge ok">本頁已學 ${learnedOnPage}/${chars.length}</span>　` : ''}
           ${pageData.topic ? escapeHTML(pageData.topic) + '　' : ''}
           <button class="sm ghost" onclick="openManualPageForm('${bookId}', ${parseInt(pageStr, 10)})">✏️ 編輯</button>
         </span>
       </div>
+      ${stu ? `<div class="tip">正在為 <strong>${escapeHTML(stu.name)}</strong> 標記：點字切換 <span class="badge ok">已學 ✓</span> / 未學，會直接存進他的字庫。</div>` : ''}
       <div class="char-grid">
-        ${(pageData.chars || []).map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}
+        ${chars.map(ch => {
+          const isLearned = learnedSet ? learnedSet.has(ch) : false;
+          return `<div class="char-chip${stu ? ' tappable' : ''}${isLearned ? ' learned' : ''}"${stu ? ` data-mark-char="${escapeHTML(ch)}"` : ''}>${escapeHTML(ch)}</div>`;
+        }).join('')}
       </div>
     </div>
   `;
@@ -2328,6 +2389,12 @@ function renderStudentDetail(app, id) {
   const hasGroups = (s.char_groups || []).length > 0;
   const mode = view.params.mode || (hasGroups ? 'groups' : 'book');   // groups | book | radical | all
   const langN = Math.max(2, sheetConfig.langPerCol || 10) * Math.max(1, sheetConfig.langCols || 5);
+  // 各字帖學習進度
+  const bookProgress = (db.books || []).map(b => {
+    const set = bookCharSet(b.id);
+    const done = learned.filter(ch => set.has(ch)).length;
+    return { id: b.id, name: b.name, done, total: set.size, pct: set.size > 0 ? Math.round(done / set.size * 100) : 0 };
+  }).filter(bp => bp.total > 0);
 
   let bodyHTML = '';
   if (learned.length === 0) {
@@ -2336,28 +2403,36 @@ function renderStudentDetail(app, id) {
     const groups = s.char_groups || [];
     const groupedSet = new Set(groups.flatMap(g => g.chars));
     const ungrouped = learned.filter(ch => !groupedSet.has(ch));
-    bodyHTML = groups.map(g => `
+    let groupsHTML = groups.map(g => `
       <div class="cat-group">
         <div class="cat-group-title">
           ✍️ ${escapeHTML(g.label || (g.chars.slice(0, 3).join('') + (g.chars.length > 3 ? '…' : '') + ' 組'))}
           <span class="badge">${g.chars.length} 字</span>
+          <button class="ghost sm" title="加字到這組" onclick="addCharsToGroup('${s.id}','${g.id}')">＋加字</button>
           <button class="ghost sm" title="改組名" onclick="renameCharGroup('${s.id}','${g.id}')">✏️</button>
           <button class="ghost sm" title="刪除這個組（字會留在字庫）" onclick="deleteCharGroup('${s.id}','${g.id}')">✕</button>
         </div>
-        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip tappable" data-jump-char="${escapeHTML(ch)}" title="點擊查看在字帖哪一頁">${escapeHTML(ch)}</div>`).join('')}</div>
       </div>
     `).join('');
     if (ungrouped.length > 0) {
-      bodyHTML += `
+      groupsHTML += `
         <div class="cat-group">
           <div class="cat-group-title">🀄 未分組（單獨練的字）<span class="badge">${ungrouped.length} 字</span></div>
-          <div class="char-grid">${ungrouped.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+          <div class="char-grid">${ungrouped.map(ch => `<div class="char-chip tappable" data-jump-char="${escapeHTML(ch)}" title="點擊查看在字帖哪一頁">${escapeHTML(ch)}</div>`).join('')}</div>
         </div>
       `;
     }
     if (groups.length === 0 && ungrouped.length === 0) {
-      bodyHTML = `<div class="empty"><h3>還沒有分組</h3><div>加字時把同類型的字放同一行，就會自動成組。</div></div>`;
+      groupsHTML = `<div class="empty"><h3>還沒有分組</h3><div>加字時把同類型的字放同一行，就會自動成組；或按「➕ 新增分組」。</div></div>`;
     }
+    bodyHTML = `
+      <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="sm" onclick="openNewGroupForm('${s.id}')">➕ 新增分組</button>
+        <span style="font-size:12px;color:var(--text-faint);">點任何字可以跳到字帖那一頁</span>
+      </div>
+      ${groupsHTML}
+    `;
   } else if (mode === 'book') {
     const groups = groupByBookPage(learned);
     bodyHTML = groups.map(g => `
@@ -2366,7 +2441,7 @@ function renderStudentDetail(app, id) {
           ${g.warn ? '⚠️' : '📖'} ${escapeHTML(g.label)}
           <span class="badge">${g.chars.length} 字</span>
         </div>
-        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip tappable" data-jump-char="${escapeHTML(ch)}" title="點擊查看在字帖哪一頁">${escapeHTML(ch)}</div>`).join('')}</div>
       </div>
     `).join('');
   } else if (mode === 'radical') {
@@ -2374,7 +2449,7 @@ function renderStudentDetail(app, id) {
     bodyHTML = groups.map(g => `
       <div class="cat-group">
         <div class="cat-group-title">🈶 ${escapeHTML(g.label)}</div>
-        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+        <div class="char-grid">${g.chars.map(ch => `<div class="char-chip tappable" data-jump-char="${escapeHTML(ch)}" title="點擊查看在字帖哪一頁">${escapeHTML(ch)}</div>`).join('')}</div>
       </div>
     `).join('');
     if (unclassified.length > 0) {
@@ -2385,7 +2460,7 @@ function renderStudentDetail(app, id) {
             <button class="sm" id="btn-ai-classify">🤖 AI 部首分類</button>
             <span style="font-weight:normal;color:var(--text-faint);">（分類一次會記住，之後免費）</span>
           </div>
-          <div class="char-grid">${unclassified.map(ch => `<div class="char-chip">${escapeHTML(ch)}</div>`).join('')}</div>
+          <div class="char-grid">${unclassified.map(ch => `<div class="char-chip tappable" data-jump-char="${escapeHTML(ch)}" title="點擊查看在字帖哪一頁">${escapeHTML(ch)}</div>`).join('')}</div>
         </div>
       `;
     }
@@ -2424,6 +2499,19 @@ function renderStudentDetail(app, id) {
       <div class="meta-item"><div class="meta-label">建立日期</div><div class="meta-value">${escapeHTML(s.created_at || '—')}</div></div>
       <div class="meta-item"><div class="meta-label">最近更新</div><div class="meta-value">${escapeHTML(s.updated_at || '—')}</div></div>
     </div>
+
+    ${bookProgress.length > 0 ? `
+      <div class="section">
+        <div class="section-title">📚 字帖學習進度（點字帖名稱可去勾選標記）</div>
+        ${bookProgress.map(bp => `
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <a style="cursor:pointer;min-width:180px;color:var(--accent);text-decoration:none;" onclick="switchView('book',{id:'${bp.id}',stu:'${s.id}'})">${escapeHTML(bp.name)}</a>
+            <div class="progress-bar" style="flex:1;"><div class="progress-bar-fill" style="width:${bp.pct}%"></div></div>
+            <span style="font-size:13px;color:var(--text-soft);white-space:nowrap;">${bp.done}/${bp.total} 字（${bp.pct}%）</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
 
     <div class="section">
       <div class="section-title">🎲 從字庫出題（隨機抓字 → 跳到出題目列印）</div>
@@ -2466,6 +2554,116 @@ function renderStudentDetail(app, id) {
 
   app.querySelectorAll('[data-remove-char]').forEach(chip => {
     chip.addEventListener('click', () => removeLearnedChar(s.id, chip.dataset.removeChar));
+  });
+  app.querySelectorAll('[data-jump-char]').forEach(chip => {
+    chip.addEventListener('click', () => jumpToCharSource(s.id, chip.dataset.jumpChar));
+  });
+}
+
+// 點學生字庫的字 → 跳到字帖那一頁（並帶著學生，該頁會亮出已學 ✓）
+function jumpToCharSource(studentId, ch) {
+  const entries = (db.char_index && db.char_index[ch]) || [];
+  if (entries.length === 0) {
+    toast(`「${ch}」不在任何字帖中（是老師額外教的字）`, 'error');
+    return;
+  }
+  const e = entries[0];
+  switchView('book', { id: e.book_id, page: e.page, stu: studentId });
+  toast(`「${ch}」在 ${bookNameById(e.book_id)} 第 ${e.page} 頁`, 'success');
+}
+
+// 整本字帖收錄的所有字（Set）
+function bookCharSet(bookId) {
+  const set = new Set();
+  const pages = db.book_pages[bookId] || {};
+  for (const p in pages) {
+    for (const ch of (pages[p].chars || [])) set.add(ch);
+  }
+  return set;
+}
+
+// 字帖頁點字：切換學生「已學 / 未學」
+function toggleLearnedFromBook(studentId, ch, bookId, pageStr) {
+  const s = (db.students || []).find(x => x.id === studentId);
+  if (!s || !ch) return;
+  const set = new Set(s.learned_chars || []);
+  if (set.has(ch)) {
+    set.delete(ch);
+    // 同步從分組移除
+    s.char_groups = (s.char_groups || [])
+      .map(g => ({ ...g, chars: g.chars.filter(x => x !== ch) }))
+      .filter(g => g.chars.length > 0);
+    toast(`「${ch}」已改為未學`, 'success');
+  } else {
+    set.add(ch);
+    toast(`「${ch}」已標記為 ${s.name} 已學 ✓`, 'success');
+  }
+  s.learned_chars = [...set];
+  s.updated_at = todayISO();
+  saveDB();
+  switchView('book', { id: bookId, page: parseInt(pageStr, 10), stu: studentId });
+}
+
+// 把字加進現有分組（同步進字庫）
+function addCharsToGroup(studentId, groupId) {
+  const s = db.students.find(x => x.id === studentId);
+  if (!s) return;
+  const g = (s.char_groups || []).find(x => x.id === groupId);
+  if (!g) return;
+  const input = prompt(`要加進「${g.label || g.chars.slice(0, 3).join('') + '…組'}」的字：`, '');
+  if (input === null) return;
+  const cs = extractChars(input);
+  if (cs.length === 0) { toast('沒有偵測到中文字', 'error'); return; }
+  const gset = new Set(g.chars);
+  const lset = new Set(s.learned_chars || []);
+  let added = 0;
+  for (const ch of cs) {
+    if (!gset.has(ch)) { gset.add(ch); added++; }
+    lset.add(ch);
+  }
+  g.chars = [...gset];
+  s.learned_chars = [...lset];
+  s.updated_at = todayISO();
+  saveDB();
+  toast(`已加 ${added} 個字到這組（同步進字庫）`, 'success');
+  switchView('student', { id: studentId, mode: 'groups' });
+}
+
+// 新增分組（組名 + 字，字同步進字庫）
+function openNewGroupForm(studentId) {
+  const s = db.students.find(x => x.id === studentId);
+  if (!s) return;
+  openModal('新增分組', `
+    <form id="newgroup-form" class="form-grid">
+      <div class="field full">
+        <label>組名（例：走之旁、寒字頭、木部）</label>
+        <input type="text" name="label" placeholder="可留空，會自動用前幾個字當名稱" />
+      </div>
+      <div class="field full">
+        <label>這組的字<span class="required">*</span></label>
+        <textarea name="chars" required placeholder="例：退逆過遊遂迷還遲道（新字會自動加進字庫）"></textarea>
+      </div>
+      <div class="form-actions full">
+        <button type="button" class="ghost" onclick="closeModal()">取消</button>
+        <button type="submit" class="primary">新增分組</button>
+      </div>
+    </form>
+  `);
+  document.getElementById('newgroup-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const cs = [...new Set(extractChars(fd.get('chars')))];
+    if (cs.length === 0) { toast('沒有偵測到中文字', 'error'); return; }
+    s.char_groups = s.char_groups || [];
+    s.char_groups.push({ id: uid('grp'), label: (fd.get('label') || '').trim(), chars: cs });
+    const lset = new Set(s.learned_chars || []);
+    for (const ch of cs) lset.add(ch);
+    s.learned_chars = [...lset];
+    s.updated_at = todayISO();
+    saveDB();
+    closeModal();
+    toast(`分組已新增（${cs.length} 字，已同步進字庫）`, 'success');
+    switchView('student', { id: studentId, mode: 'groups' });
   });
 }
 
