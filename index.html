@@ -885,8 +885,30 @@ const SHEET_FONTS = {
 const GAN = '甲乙丙丁戊己庚辛壬癸';
 const ZHI = '子丑寅卯辰巳午未申酉戌亥';
 function ganzhiOfYear(y) { return GAN[(y - 4) % 10] + ZHI[(y - 4) % 12]; }
-const SIG_YEARS = Array.from({ length: 22 }, (_, i) => 2025 + i); // 2025~2046
+const SIG_YEARS = Array.from({ length: 27 }, (_, i) => 2020 + i); // 2020~2046
 const SIG_SEASONS = ['春', '夏', '秋', '冬', '元月', '一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+function currentSeason() {
+  const m = new Date().getMonth() + 1;
+  return m >= 3 && m <= 5 ? '春' : m >= 6 && m <= 8 ? '夏' : m >= 9 && m <= 11 ? '秋' : '冬';
+}
+// 落款格式：parts 由右到左，每一行由哪些項目組成；parts 為 null 表示自訂
+const SIG_FORMATS = [
+  { key: 'event|yearname',   label: '比賽名稱｜年份＋姓名（正式版）', parts: [['event'], ['year', 'name']] },
+  { key: 'year|name',        label: '年份｜姓名',                     parts: [['year'], ['name']] },
+  { key: 'event|year|name',  label: '比賽名稱｜年份｜姓名（三行）',    parts: [['event'], ['year'], ['name']] },
+  { key: 'school|name',      label: '學校｜姓名',                     parts: [['school'], ['name']] },
+  { key: 'year|schoolname',  label: '年份｜學校＋姓名',               parts: [['year'], ['school', 'name']] },
+  { key: 'school|yearname',  label: '學校｜年份＋姓名',               parts: [['school'], ['year', 'name']] },
+  { key: 'year|school|name', label: '年份｜學校｜姓名（三行）',        parts: [['year'], ['school'], ['name']] },
+  { key: 'custom',           label: '自訂（每一行自己打）',           parts: null },
+];
+// 落款各行在最左一行裡的位置（以格寬為單位）：xs 中心點、ys 起筆高度、fs 字大小
+const SIG_LAYOUT = {
+  1: { xs: [0.5], ys: [0.3], fs: 0.25 },
+  2: { xs: [0.66, 0.30], ys: [0.22, 0.5], fs: 0.25 },
+  3: { xs: [0.78, 0.5, 0.22], ys: [0.22, 0.42, 0.62], fs: 0.21 },
+};
+const SHEET_LINE_COLORS = { red: '#c0392b', black: '#333333', gray: '#8f8f8f' };
 const MM2PX = 3.7795;
 
 // ---------- State ----------
@@ -918,12 +940,18 @@ let sheetConfig = {
   langPerCol: 10,          // 語文競賽：每行字數
   langCols: 5,             // 語文競賽：行數（最少）
   k4PerCol: 8,             // 4K：每行字數
+  k4Style: 'official',     // 4K：'official' 正式版（雙框直行線）| 'grid' 方格
+  k4LineColor: 'gray',     // 4K 格線顏色（語文競賽用 lineColor）
   showSig: true,           // 4K：顯示落款
-  sigYear: 2026,
-  sigConnector: '之',      // 之 / 年
-  sigSeason: '春',
+  sigFormat: 'event|yearname',
+  sigEvent: '○○書法比賽',
+  sigYear: Math.min(2046, Math.max(2020, new Date().getFullYear())),
+  sigConnector: '',        // '' / 之 / 年
+  sigSeason: currentSeason(),
   sigSchool: '○○國小',
   sigName: '○○○',
+  sigShu: true,            // 姓名後加「書」
+  sigCustom: ['', '', ''], // 自訂落款的三行（右→左）
 };
 function loadSheetConfig() {
   try {
@@ -2931,6 +2959,8 @@ function renderSheet(app) {
   const isLang = sheetConfig.type === 'lang';
   const comps = db.competitions || [];
   const chars = extractChars(sheetConfig.content || '');
+  const lineKey = isLang ? 'lineColor' : 'k4LineColor';
+  const lineColorNow = sheetConfig[lineKey] || (isLang ? 'red' : 'gray');
 
   app.innerHTML = `
     <div class="page-header">
@@ -2972,6 +3002,13 @@ function renderSheet(app) {
             <label>每行字數</label>
             <input type="number" id="sheet-k4-percol" min="2" max="14" value="${sheetConfig.k4PerCol}" />
           </div>
+          <div class="field">
+            <label>格式</label>
+            <select id="sheet-k4-style">
+              <option value="official" ${sheetConfig.k4Style !== 'grid' ? 'selected' : ''}>正式版（雙框直行線）</option>
+              <option value="grid" ${sheetConfig.k4Style === 'grid' ? 'selected' : ''}>方格</option>
+            </select>
+          </div>
         `}
       </div>
       <div class="field">
@@ -2983,42 +3020,7 @@ function renderSheet(app) {
     ${!isLang ? `
       <div class="section">
         <div class="section-title">落款設定</div>
-        <div class="sheet-controls">
-          <div class="field">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-              <input type="checkbox" id="sheet-show-sig" ${sheetConfig.showSig ? 'checked' : ''} style="width:auto;" />
-              <span>顯示落款</span>
-            </label>
-          </div>
-          <div class="field">
-            <label>年份（自動配天干地支）</label>
-            <select id="sheet-sig-year" ${sheetConfig.showSig ? '' : 'disabled'}>
-              ${SIG_YEARS.map(y => `<option value="${y}" ${y === sheetConfig.sigYear ? 'selected' : ''}>${y}（${ganzhiOfYear(y)}）</option>`).join('')}
-            </select>
-          </div>
-          <div class="field">
-            <label>連接字</label>
-            <select id="sheet-sig-connector" ${sheetConfig.showSig ? '' : 'disabled'}>
-              <option value="之" ${sheetConfig.sigConnector === '之' ? 'selected' : ''}>之（丙午之春）</option>
-              <option value="年" ${sheetConfig.sigConnector === '年' ? 'selected' : ''}>年（丙午年春）</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>時節 / 月份</label>
-            <select id="sheet-sig-season" ${sheetConfig.showSig ? '' : 'disabled'}>
-              ${SIG_SEASONS.map(s => `<option value="${s}" ${s === sheetConfig.sigSeason ? 'selected' : ''}>${s}</option>`).join('')}
-            </select>
-          </div>
-          <div class="field">
-            <label>學校</label>
-            <input type="text" id="sheet-sig-school" value="${escapeHTML(sheetConfig.sigSchool)}" placeholder="○○國小" ${sheetConfig.showSig ? '' : 'disabled'} />
-          </div>
-          <div class="field">
-            <label>姓名</label>
-            <input type="text" id="sheet-sig-name" value="${escapeHTML(sheetConfig.sigName)}" placeholder="○○○" ${sheetConfig.showSig ? '' : 'disabled'} />
-          </div>
-        </div>
-        <div class="tip">落款預覽：<strong id="sheet-sig-preview">${escapeHTML(buildSigLines().join('　'))}</strong>（直式印在左下角）</div>
+        ${sigControlsHTML()}
       </div>
     ` : ''}
 
@@ -3048,8 +3050,9 @@ function renderSheet(app) {
         <div class="field">
           <label>格線顏色</label>
           <select id="sheet-linecolor">
-            <option value="red" ${sheetConfig.lineColor === 'red' ? 'selected' : ''}>紅色（傳統）</option>
-            <option value="black" ${sheetConfig.lineColor === 'black' ? 'selected' : ''}>黑色</option>
+            <option value="gray" ${lineColorNow === 'gray' ? 'selected' : ''}>淺灰${isLang ? '' : '（正式版）'}</option>
+            <option value="red" ${lineColorNow === 'red' ? 'selected' : ''}>紅色${isLang ? '（傳統）' : ''}</option>
+            <option value="black" ${lineColorNow === 'black' ? 'selected' : ''}>黑色</option>
           </select>
         </div>
       </div>
@@ -3071,15 +3074,32 @@ function renderSheet(app) {
   bindChange('sheet-type', (e) => { sheetConfig.type = e.target.value; saveSheetConfig(); render(); });
   bindChange('sheet-from-comp', (e) => {
     const c = comps.find(x => x.id === e.target.value);
-    if (c) { sheetConfig.content = c.poem_text || ''; saveSheetConfig(); render(); }
+    if (c) {
+      sheetConfig.content = c.poem_text || '';
+      if (c.name) sheetConfig.sigEvent = c.name;
+      saveSheetConfig();
+      render();
+    }
   });
+  bindChange('sheet-k4-style', (e) => { sheetConfig.k4Style = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-sig-format', (e) => {
+    if (e.target.value === 'custom') {
+      // 從剛剛選的格式帶入三行，再自己改
+      const lines = composeSigLines(sheetConfig.sigFormat);
+      sheetConfig.sigCustom = [0, 1, 2].map(i => lines[i] || '');
+    }
+    sheetConfig.sigFormat = e.target.value;
+    saveSheetConfig();
+    render();
+  });
+  bindChange('sheet-sig-shu', (e) => { sheetConfig.sigShu = e.target.checked; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-lang-percol', (e) => { sheetConfig.langPerCol = parseInt(e.target.value, 10) || 10; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-lang-cols', (e) => { sheetConfig.langCols = parseInt(e.target.value, 10) || 5; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-k4-percol', (e) => { sheetConfig.k4PerCol = parseInt(e.target.value, 10) || 8; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-paper', (e) => { sheetConfig.paper = e.target.value; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-copies', (e) => { sheetConfig.copies = parseInt(e.target.value, 10) || 1; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-font', (e) => { sheetConfig.font = e.target.value; saveSheetConfig(); updateSheetPreview(); });
-  bindChange('sheet-linecolor', (e) => { sheetConfig.lineColor = e.target.value; saveSheetConfig(); updateSheetPreview(); });
+  bindChange('sheet-linecolor', (e) => { sheetConfig[lineKey] = e.target.value; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-show-sig', (e) => { sheetConfig.showSig = e.target.checked; saveSheetConfig(); render(); });
   bindChange('sheet-sig-year', (e) => { sheetConfig.sigYear = parseInt(e.target.value, 10) || 2026; saveSheetConfig(); updateSheetPreview(); });
   bindChange('sheet-sig-connector', (e) => { sheetConfig.sigConnector = e.target.value; saveSheetConfig(); updateSheetPreview(); });
@@ -3104,14 +3124,126 @@ function renderSheet(app) {
     saveSheetConfig();
     updateSheetPreview();
   });
+  const eventEl = document.getElementById('sheet-sig-event');
+  if (eventEl) eventEl.addEventListener('input', () => {
+    sheetConfig.sigEvent = eventEl.value;
+    saveSheetConfig();
+    updateSheetPreview();
+  });
+  [0, 1, 2].forEach(i => {
+    const el = document.getElementById('sheet-sig-custom-' + i);
+    if (el) el.addEventListener('input', () => {
+      sheetConfig.sigCustom = [0, 1, 2].map(j => (sheetConfig.sigCustom || [])[j] || '');
+      sheetConfig.sigCustom[i] = el.value;
+      saveSheetConfig();
+      updateSheetPreview();
+    });
+  });
 
   updateSheetPreview();
 }
 
-// 落款文字行（右→左：年份時節、學校、姓名）
+// 落款設定區塊：格式選單＋依格式只開放用得到的欄位
+function sigControlsHTML() {
+  const fmt = SIG_FORMATS.find(f => f.key === sheetConfig.sigFormat) || SIG_FORMATS[0];
+  const on = !!sheetConfig.showSig;
+  const custom = !fmt.parts;
+  const used = new Set(custom ? [] : fmt.parts.flat());
+  const dis = part => (on && used.has(part)) ? '' : 'disabled';
+  const dim = part => (on && used.has(part)) ? '' : 'style="opacity:0.4;"';
+  const yearNow = new Date().getFullYear();
+  const customLabels = ['第一行（最右邊）', '第二行', '第三行（最左邊，不要就空著）'];
+  return `
+    <div class="sheet-controls">
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="sheet-show-sig" ${on ? 'checked' : ''} style="width:auto;" />
+          <span>顯示落款</span>
+        </label>
+      </div>
+      <div class="field">
+        <label>落款格式（右邊是第一行）</label>
+        <select id="sheet-sig-format" ${on ? '' : 'disabled'}>
+          ${SIG_FORMATS.map(f => `<option value="${f.key}" ${f.key === fmt.key ? 'selected' : ''}>${f.label}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    ${custom ? `
+      <div class="sheet-controls">
+        ${customLabels.map((label, i) => `
+          <div class="field">
+            <label>${label}</label>
+            <input type="text" id="sheet-sig-custom-${i}" value="${escapeHTML((sheetConfig.sigCustom || [])[i] || '')}" ${on ? '' : 'disabled'} />
+          </div>
+        `).join('')}
+      </div>
+      <div class="tip">年份對照：${Array.from({ length: 6 }, (_, i) => yearNow - 1 + i).map(y => `${y} ${ganzhiOfYear(y)}`).join('｜')}</div>
+    ` : `
+      <div class="sheet-controls">
+        <div class="field" ${dim('event')}>
+          <label>比賽名稱</label>
+          <input type="text" id="sheet-sig-event" value="${escapeHTML(sheetConfig.sigEvent || '')}" placeholder="○○書法比賽" ${dis('event')} />
+        </div>
+        <div class="field" ${dim('school')}>
+          <label>學校</label>
+          <input type="text" id="sheet-sig-school" value="${escapeHTML(sheetConfig.sigSchool || '')}" placeholder="○○國小" ${dis('school')} />
+        </div>
+        <div class="field" ${dim('year')}>
+          <label>年份（自動配天干地支）</label>
+          <select id="sheet-sig-year" ${dis('year')}>
+            ${SIG_YEARS.map(y => `<option value="${y}" ${y === sheetConfig.sigYear ? 'selected' : ''}>${y}（${ganzhiOfYear(y)}）</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" ${dim('year')}>
+          <label>連接字</label>
+          <select id="sheet-sig-connector" ${dis('year')}>
+            <option value="" ${!sheetConfig.sigConnector ? 'selected' : ''}>無（丙午秋）</option>
+            <option value="之" ${sheetConfig.sigConnector === '之' ? 'selected' : ''}>之（丙午之秋）</option>
+            <option value="年" ${sheetConfig.sigConnector === '年' ? 'selected' : ''}>年（丙午年秋）</option>
+          </select>
+        </div>
+        <div class="field" ${dim('year')}>
+          <label>時節 / 月份</label>
+          <select id="sheet-sig-season" ${dis('year')}>
+            ${SIG_SEASONS.map(s => `<option value="${s}" ${s === sheetConfig.sigSeason ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" ${dim('name')}>
+          <label>姓名</label>
+          <input type="text" id="sheet-sig-name" value="${escapeHTML(sheetConfig.sigName || '')}" placeholder="○○○" ${dis('name')} />
+        </div>
+        <div class="field" ${dim('name')}>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:24px;">
+            <input type="checkbox" id="sheet-sig-shu" ${sheetConfig.sigShu ? 'checked' : ''} style="width:auto;" ${dis('name')} />
+            <span>姓名後加「書」</span>
+          </label>
+        </div>
+      </div>
+    `}
+    <div class="tip">落款預覽：<strong id="sheet-sig-preview">${escapeHTML(buildSigLines().join('／') || '（無）')}</strong>（直式寫在最後一行字的下方）</div>
+  `;
+}
+
+// 落款各項目的文字
+function sigPartValues() {
+  return {
+    event: (sheetConfig.sigEvent || '').trim(),
+    school: (sheetConfig.sigSchool || '').trim(),
+    year: `${ganzhiOfYear(sheetConfig.sigYear)}${sheetConfig.sigConnector || ''}${sheetConfig.sigSeason || ''}`,
+    name: (sheetConfig.sigName || '').trim() + (sheetConfig.sigShu ? '書' : ''),
+  };
+}
+
+// 依落款格式組出各行（右→左）
+function composeSigLines(formatKey) {
+  const f = SIG_FORMATS.find(x => x.key === formatKey) || SIG_FORMATS[0];
+  if (!f.parts) return (sheetConfig.sigCustom || []).map(s => (s || '').trim()).filter(Boolean).slice(0, 3);
+  const p = sigPartValues();
+  return f.parts.map(group => group.map(k => p[k]).join('')).filter(Boolean);
+}
+
 function buildSigLines() {
-  const yearLine = `${ganzhiOfYear(sheetConfig.sigYear)}${sheetConfig.sigConnector}${sheetConfig.sigSeason}`;
-  return [yearLine, (sheetConfig.sigSchool || '').trim(), (sheetConfig.sigName || '').trim()].filter(Boolean);
+  return composeSigLines(sheetConfig.sigFormat);
 }
 
 function updateSheetPreview() {
@@ -3131,7 +3263,7 @@ function updateSheetPreview() {
   const w = document.getElementById('sheet-warn');
   if (w) w.textContent = warn || '';
   const sp = document.getElementById('sheet-sig-preview');
-  if (sp) sp.textContent = buildSigLines().join('　');
+  if (sp) sp.textContent = buildSigLines().join('／') || '（無）';
 }
 
 // 產生整張題目單 HTML（mm 精準排版，直接可印）
@@ -3143,7 +3275,9 @@ function buildSheetHTML() {
   const copyW = (availW - GAP * (n - 1)) / n, copyH = availH;
   const chars = extractChars(sheetConfig.content || '');
   const fontStack = (SHEET_FONTS[sheetConfig.font] || SHEET_FONTS.kai).stack;
-  const line = sheetConfig.lineColor === 'black' ? '#333333' : '#c0392b';
+  const line = sheetConfig.type === 'lang'
+    ? (SHEET_LINE_COLORS[sheetConfig.lineColor] || SHEET_LINE_COLORS.red)
+    : (SHEET_LINE_COLORS[sheetConfig.k4LineColor] || SHEET_LINE_COLORS.gray);
   let copyInner = '', warn = '';
 
   if (sheetConfig.type === 'lang') {
@@ -3171,7 +3305,9 @@ function buildSheetHTML() {
       }
     }
     const totalCols = sigInfo ? sigInfo.totalCols : poemCols;
-    copyInner = buildGridHTML(chars, totalCols, perCol, copyW, copyH, line, fontStack, sigInfo);
+    copyInner = sheetConfig.k4Style === 'grid'
+      ? buildGridHTML(chars, totalCols, perCol, copyW, copyH, line, fontStack, sigInfo)
+      : buildK4OfficialHTML(chars, totalCols, perCol, copyW, copyH, line, fontStack, sigInfo);
   }
 
   // 組合 n 份（左右並排，中間放裁切虛線）
@@ -3213,21 +3349,57 @@ function buildGridHTML(chars, totalCols, perCol, areaW, areaH, line, fontStack, 
     }
   }
 
-  // 落款（直式，右到左依序：年份時節 → 學校 → 姓名）
   if (sigInfo && sigInfo.lines.length > 0) {
-    const startRow = Math.max(0, Math.min(perCol - 1, sigInfo.startRow));
-    const sx = ox, sy = oy + startRow * cell;
-    const sh = (perCol - startRow) * cell;
-    const sigFs = cell * 0.22;
-    out += `
-      <div style="position:absolute;left:${sx.toFixed(2)}mm;top:${sy.toFixed(2)}mm;width:${cell.toFixed(2)}mm;height:${sh.toFixed(2)}mm;box-sizing:border-box;padding:${(cell * 0.12).toFixed(2)}mm;display:flex;justify-content:center;">
-        <div style="writing-mode:vertical-rl;text-orientation:upright;font-family:${fontStack};font-size:${sigFs.toFixed(2)}mm;line-height:1.35;color:#1a1a1a;height:100%;">
-          ${sigInfo.lines.map(l => `<div>${escapeHTML(l)}</div>`).join('')}
-        </div>
-      </div>`;
+    out += buildSigHTML(sigInfo.lines, ox, oy, cell, sigInfo.startRow, perCol, fontStack);
   }
 
   return out;
+}
+
+// 4K 正式版：雙線外框＋直行線（不畫橫線），右起直讀
+function buildK4OfficialHTML(chars, totalCols, perCol, areaW, areaH, line, fontStack, sigInfo) {
+  const D = 1.4, pad = D + 1;   // D：外框與內框的距離
+  const cell = Math.min((areaW - pad * 2) / totalCols, (areaH - pad * 2) / perCol);
+  const gw = cell * totalCols, gh = cell * perCol;
+  const ox = (areaW - gw) / 2, oy = (areaH - gh) / 2;
+  const f = v => v.toFixed(2) + 'mm';
+  let out = '';
+  out += `<div style="position:absolute;left:${f(ox - D)};top:${f(oy - D)};width:${f(gw + D * 2)};height:${f(gh + D * 2)};border:0.5mm solid ${line};box-sizing:border-box;"></div>`;
+  out += `<div style="position:absolute;left:${f(ox)};top:${f(oy)};width:${f(gw)};height:${f(gh)};border:0.2mm solid ${line};box-sizing:border-box;"></div>`;
+  for (let k = 1; k < totalCols; k++) {
+    out += `<div style="position:absolute;left:${f(ox + k * cell)};top:${f(oy)};height:${f(gh)};border-left:0.2mm solid ${line};"></div>`;
+  }
+  chars.forEach((ch, idx) => {
+    const col = Math.floor(idx / perCol), row = idx % perCol;
+    const x = ox + (totalCols - 1 - col) * cell, y = oy + row * cell;
+    out += `<div style="position:absolute;left:${f(x)};top:${f(y)};width:${f(cell)};height:${f(cell)};display:flex;align-items:center;justify-content:center;font-family:${fontStack};font-size:${f(cell * 0.74)};line-height:1;color:#1a1a1a;">${escapeHTML(ch)}</div>`;
+  });
+  if (sigInfo && sigInfo.lines.length > 0) {
+    out += buildSigHTML(sigInfo.lines, ox, oy, cell, sigInfo.startRow, perCol, fontStack);
+  }
+  return out;
+}
+
+// 直式落款，寫在最左一行 startRow 之後：第一行靠右，後面的行往左且起筆略低；字太多就整體縮小
+function buildSigHTML(lines, colX, gridY, cell, startRow, perCol, fontStack) {
+  const n = Math.min(3, lines.length);
+  if (!n) return '';
+  const L = SIG_LAYOUT[n];
+  const LS = 0.06;
+  const row0 = Math.max(0, Math.min(perCol - 1, startRow));
+  let k = 1;
+  lines.slice(0, n).forEach((t, j) => {
+    const need = [...t].length * (L.fs + LS);
+    const avail = perCol - row0 - L.ys[j] - 0.12;
+    if (avail > 0 && need > avail) k = Math.min(k, avail / need);
+  });
+  const fs = cell * L.fs * k, ls = cell * LS * k;
+  const f = v => v.toFixed(2) + 'mm';
+  return lines.slice(0, n).map((t, j) => {
+    const cx = colX + L.xs[j] * cell;
+    const cy = gridY + (row0 + L.ys[j]) * cell;
+    return `<div style="position:absolute;left:${f(cx - fs / 2)};top:${f(cy)};width:${f(fs)};writing-mode:vertical-rl;text-orientation:upright;white-space:nowrap;font-family:${fontStack};font-size:${f(fs)};line-height:1;letter-spacing:${f(ls)};color:#1a1a1a;">${escapeHTML(t)}</div>`;
+  }).join('');
 }
 
 function printSheet() {
@@ -3539,6 +3711,13 @@ function init() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
   });
+
+  // 網址加 #sheet、#students… 直接開到該分頁；#sheet/k4、#sheet/lang 指定題型
+  const [hashView, hashArg] = location.hash.slice(1).split('/');
+  if (['competitions', 'books', 'lookup', 'upload', 'sheet', 'students'].includes(hashView)) {
+    view = { name: hashView, params: {} };
+    if (hashView === 'sheet' && (hashArg === 'k4' || hashArg === 'lang')) sheetConfig.type = hashArg;
+  }
 
   render();
   registerServiceWorker();
