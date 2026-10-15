@@ -910,7 +910,12 @@ const MM2PX = 3.7795;
 
 // ===== 書法格子紙常數 =====
 const GRID_PRESETS = [8, 8.2, 8.5, 9, 9.5, 10];   // 每格公分
-const GRID_GUIDES = { none: '無（純方格）', tian: '田字格', mi: '米字格', jiu: '九宮格' };
+// 格內輔助線（可複選，勾的線全部疊在一起畫；米字格本身就含十字線）
+const GRID_GUIDES = [
+  { key: 'cross', label: '十字格（田字格）' },
+  { key: 'mi',    label: '米字格（十字＋斜線）' },
+  { key: 'jiu',   label: '九宮格（井字格）' },
+];
 const GRID_WEIGHTS = { thin: { label: '細', w: 0.3 }, mid: { label: '中', w: 0.5 }, bold: { label: '粗', w: 0.8 } };  // 格線粗細（mm）
 
 // ---------- State ----------
@@ -972,14 +977,21 @@ let gridConfig = {
   rows: 3,            // 直向幾格
   paper: 'A4',
   orient: 'auto',     // auto 放得下的方向 | portrait 直式 | landscape 橫式
-  guide: 'none',      // none | tian 田字 | mi 米字 | jiu 九宮
+  guides: { cross: false, mi: false, jiu: false },   // 都不勾＝純方格
   lineColor: 'red',
   weight: 'mid',
 };
 function loadGridConfig() {
   try {
     const raw = localStorage.getItem(GRID_STORAGE_KEY);
-    if (raw) gridConfig = { ...gridConfig, ...JSON.parse(raw) };
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    // v8 存的是單選 guide（none/tian/mi/jiu），換成勾選格式
+    if (saved.guides === undefined && saved.guide) {
+      saved.guides = { cross: saved.guide === 'tian', mi: saved.guide === 'mi', jiu: saved.guide === 'jiu' };
+    }
+    delete saved.guide;
+    gridConfig = { ...gridConfig, ...saved };
   } catch (e) { /* ignore */ }
 }
 function saveGridConfig() {
@@ -3503,10 +3515,15 @@ function renderGridPaper(app) {
           </select>
         </div>
         <div class="field">
-          <label>格內輔助線</label>
-          <select id="grid-guide">
-            ${Object.entries(GRID_GUIDES).map(([k, label]) => `<option value="${k}" ${k === g.guide ? 'selected' : ''}>${label}</option>`).join('')}
-          </select>
+          <label>格內輔助線（可複選，都不勾＝純方格）</label>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            ${GRID_GUIDES.map(gd => `
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
+                <input type="checkbox" data-guide="${gd.key}" ${(g.guides || {})[gd.key] ? 'checked' : ''} style="width:auto;" />
+                ${gd.label}
+              </label>
+            `).join('')}
+          </div>
         </div>
         <div class="field">
           <label>線條顏色</label>
@@ -3568,11 +3585,15 @@ function renderGridPaper(app) {
     rowsEl.value = gridConfig.rows;
     commit();
   });
-  [['grid-paper', 'paper'], ['grid-orient', 'orient'], ['grid-guide', 'guide'], ['grid-color', 'lineColor'], ['grid-weight', 'weight']]
+  [['grid-paper', 'paper'], ['grid-orient', 'orient'], ['grid-color', 'lineColor'], ['grid-weight', 'weight']]
     .forEach(([id, key]) => document.getElementById(id).addEventListener('change', (e) => {
       gridConfig[key] = e.target.value;
       commit();
     }));
+  document.querySelectorAll('[data-guide]').forEach(cb => cb.addEventListener('change', () => {
+    gridConfig.guides = { ...(gridConfig.guides || {}), [cb.dataset.guide]: cb.checked };
+    commit();
+  }));
 
   updateGridPreview();
 }
@@ -3592,7 +3613,9 @@ function gridPageSize() {
 // 整張格子紙（mm 精準）：SVG 畫在紙張正中間
 function buildGridPaperHTML() {
   const { W, H, landscape, cell, gw, gh, fits } = gridPageSize();
-  const { cols, rows, guide } = gridConfig;
+  const { cols, rows } = gridConfig;
+  const gs = gridConfig.guides || {};
+  const wantCross = gs.cross || gs.mi, wantDiag = gs.mi, wantJiu = gs.jiu;
   const color = SHEET_LINE_COLORS[gridConfig.lineColor] || SHEET_LINE_COLORS.red;
   const lw = (GRID_WEIGHTS[gridConfig.weight] || GRID_WEIGHTS.mid).w;
   const ox = (W - gw) / 2, oy = (H - gh) / 2;
@@ -3600,18 +3623,18 @@ function buildGridPaperHTML() {
   let shapes = '';
 
   // 輔助虛線先畫，格線蓋在上面
-  if (guide && guide !== 'none') {
+  if (wantCross || wantDiag || wantJiu) {
     let d = '';
     for (let c = 0; c < cols; c++) {
       for (let r = 0; r < rows; r++) {
         const x = c * cell, y = r * cell;
-        if (guide === 'tian' || guide === 'mi') {
+        if (wantCross) {
           d += `M${n(x + cell / 2)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell / 2)}H${n(x + cell)}`;
         }
-        if (guide === 'mi') {
+        if (wantDiag) {
           d += `M${n(x)} ${n(y)}L${n(x + cell)} ${n(y + cell)}M${n(x + cell)} ${n(y)}L${n(x)} ${n(y + cell)}`;
         }
-        if (guide === 'jiu') {
+        if (wantJiu) {
           [1 / 3, 2 / 3].forEach(t => {
             d += `M${n(x + cell * t)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell * t)}H${n(x + cell)}`;
           });

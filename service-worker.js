@@ -1,6 +1,6 @@
 // 兆婷藝術學院 - 書法比賽管理系統 PWA service worker
 // 改檔案後請把 VERSION 數字 +1，再 push，iPad 才會抓到新版
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE_NAME = 'calligraphy-' + VERSION;
 const SCOPE_BASE = self.registration.scope; // e.g. https://user.github.io/calligraphy/
 const ASSETS = [
@@ -15,7 +15,8 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(ASSETS))
+      // reload: skip the browser HTTP cache so the new version's files are what gets stored
+      .then((cache) => cache.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -34,10 +35,16 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // For navigations: try network first, fall back to cached index.html (so URL deep-links still work offline)
+  // For navigations: try network first, fall back to cached index.html (so URL deep-links still work offline).
+  // no-cache: GitHub Pages lets browsers keep HTML ~10 min, which made the iPad keep showing the old version.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))
+      fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+        // A navigation can't be answered with a redirected response, so rebuild it as a plain one
+        .then((resp) => (resp.redirected
+          ? new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: resp.headers })
+          : resp))
+        .catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))
     );
     return;
   }
