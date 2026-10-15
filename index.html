@@ -741,18 +741,13 @@
     box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
     position: relative;
   }
+  /* 列印時只印 #print-root（printHTML 填入），其他全部不佔版面 */
+  #print-root { display: none; }
   @media print {
-    body * { visibility: hidden !important; }
-    #sheet-root, #sheet-root * { visibility: visible !important; }
-    #sheet-root {
-      position: absolute !important;
-      left: 0 !important;
-      top: 0 !important;
-      transform: none !important;
-      margin: 0 !important;
-    }
-    .sheet-clip { overflow: visible !important; }
-    .print-sheet { box-shadow: none !important; }
+    html, body { background: #fff !important; }
+    body > *:not(#print-root) { display: none !important; }
+    #print-root { display: block !important; }
+    #print-root .print-sheet { box-shadow: none !important; overflow: hidden; }
   }
 
   /* ===== 學生字庫分類 ===== */
@@ -823,6 +818,7 @@
       <div class="tab" data-view="lookup">🔍 查字</div>
       <div class="tab" data-view="upload">📸 補資料</div>
       <div class="tab" data-view="sheet">🖨️ 出題目</div>
+      <div class="tab" data-view="grid">📐 格子</div>
       <div class="tab" data-view="students">🎓 學生</div>
     </div>
   </div>
@@ -839,6 +835,7 @@
 <div class="footer-hint">資料儲存於本機瀏覽器（localStorage）· 記得定期匯出 JSON 備份</div>
 
 <div class="toast-container" id="toast-container"></div>
+<div id="print-root"></div>
 
 <script src="seed-data.js"></script>
 <script>
@@ -911,6 +908,11 @@ const SIG_LAYOUT = {
 const SHEET_LINE_COLORS = { red: '#c0392b', black: '#333333', gray: '#8f8f8f' };
 const MM2PX = 3.7795;
 
+// ===== 書法格子紙常數 =====
+const GRID_PRESETS = [8, 8.2, 8.5, 9, 9.5, 10];   // 每格公分
+const GRID_GUIDES = { none: '無（純方格）', tian: '田字格', mi: '米字格', jiu: '九宮格' };
+const GRID_WEIGHTS = { thin: { label: '細', w: 0.3 }, mid: { label: '中', w: 0.5 }, bold: { label: '粗', w: 0.8 } };  // 格線粗細（mm）
+
 // ---------- State ----------
 let db = null;
 let view = { name: 'competitions', params: {} };
@@ -961,6 +963,27 @@ function loadSheetConfig() {
 }
 function saveSheetConfig() {
   localStorage.setItem(SHEET_STORAGE_KEY, JSON.stringify(sheetConfig));
+}
+// 書法格子紙設定（存 localStorage）
+const GRID_STORAGE_KEY = 'calligraphy-grid-config';
+let gridConfig = {
+  cellCm: 8,          // 每格幾公分
+  cols: 2,            // 橫向幾格
+  rows: 3,            // 直向幾格
+  paper: 'A4',
+  orient: 'auto',     // auto 放得下的方向 | portrait 直式 | landscape 橫式
+  guide: 'none',      // none | tian 田字 | mi 米字 | jiu 九宮
+  lineColor: 'red',
+  weight: 'mid',
+};
+function loadGridConfig() {
+  try {
+    const raw = localStorage.getItem(GRID_STORAGE_KEY);
+    if (raw) gridConfig = { ...gridConfig, ...JSON.parse(raw) };
+  } catch (e) { /* ignore */ }
+}
+function saveGridConfig() {
+  localStorage.setItem(GRID_STORAGE_KEY, JSON.stringify(gridConfig));
 }
 
 // ---------- Storage ----------
@@ -1090,6 +1113,7 @@ function render() {
   else if (view.name === 'lookup')       renderLookup(app);
   else if (view.name === 'upload')       renderUpload(app);
   else if (view.name === 'sheet')        renderSheet(app);
+  else if (view.name === 'grid')         renderGridPaper(app);
   else if (view.name === 'students')     renderStudents(app);
   else if (view.name === 'student')      renderStudentDetail(app, view.params.id);
 }
@@ -3403,15 +3427,261 @@ function buildSigHTML(lines, colX, gridY, cell, startRow, perCol, fontStack) {
 }
 
 function printSheet() {
-  const paper = PAPERS[sheetConfig.paper] || PAPERS.A4;
+  const r = buildSheetHTML();
+  printHTML(r.html, r.W, r.H);
+}
+
+// 只印傳進來的那一張（紙張大小 wMm × hMm、無邊界）
+function printHTML(html, wMm, hMm) {
   let st = document.getElementById('page-size-style');
   if (!st) {
     st = document.createElement('style');
     st.id = 'page-size-style';
     document.head.appendChild(st);
   }
-  st.textContent = `@page { size: ${paper.w}mm ${paper.h}mm; margin: 0; }`;
+  st.textContent = `@page { size: ${wMm}mm ${hMm}mm; margin: 0; }`;
+  document.getElementById('print-root').innerHTML = html;
   window.print();
+}
+
+// =================================================================
+// View: 📐 書法格子紙（實際尺寸，置中）
+// =================================================================
+const cmText = mm => String(+(mm / 10).toFixed(2));
+
+function renderGridPaper(app) {
+  const g = gridConfig;
+  app.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">📐 書法格子紙</h1>
+        <div class="page-subtitle">照實際尺寸印出格子，可以墊在宣紙下面或直接練字。格子會放在紙張正中間。</div>
+      </div>
+      <button class="primary" onclick="printGridPaper()">🖨️ 列印</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">每格大小</div>
+      <div class="mode-pills" id="grid-presets">
+        ${GRID_PRESETS.map(v => `<button class="sm" data-cm="${v}">${v} 公分</button>`).join('')}
+      </div>
+      <div class="sheet-controls">
+        <div class="field">
+          <label>自己設定（公分，可打小數點）</label>
+          <input type="number" id="grid-cell" min="1" max="40" step="0.1" value="${g.cellCm}" />
+        </div>
+        <div class="field">
+          <label>橫向幾格</label>
+          <input type="number" id="grid-cols" min="1" max="20" step="1" value="${g.cols}" />
+        </div>
+        <div class="field">
+          <label>直向幾格</label>
+          <input type="number" id="grid-rows" min="1" max="20" step="1" value="${g.rows}" />
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="button" id="grid-swap">⇄ 橫直對調</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">紙張與線條</div>
+      <div class="sheet-controls">
+        <div class="field">
+          <label>紙張</label>
+          <select id="grid-paper">
+            ${Object.keys(PAPERS).map(k => `<option value="${k}" ${k === g.paper ? 'selected' : ''}>${k}（${cmText(PAPERS[k].w)} × ${cmText(PAPERS[k].h)} 公分）</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>紙張方向</label>
+          <select id="grid-orient">
+            <option value="auto" ${g.orient === 'auto' ? 'selected' : ''}>自動（放得下的方向）</option>
+            <option value="portrait" ${g.orient === 'portrait' ? 'selected' : ''}>直式</option>
+            <option value="landscape" ${g.orient === 'landscape' ? 'selected' : ''}>橫式</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>格內輔助線</label>
+          <select id="grid-guide">
+            ${Object.entries(GRID_GUIDES).map(([k, label]) => `<option value="${k}" ${k === g.guide ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>線條顏色</label>
+          <select id="grid-color">
+            <option value="red" ${g.lineColor === 'red' ? 'selected' : ''}>紅色</option>
+            <option value="black" ${g.lineColor === 'black' ? 'selected' : ''}>黑色</option>
+            <option value="gray" ${g.lineColor === 'gray' ? 'selected' : ''}>淺灰</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>線條粗細</label>
+          <select id="grid-weight">
+            ${Object.entries(GRID_WEIGHTS).map(([k, v]) => `<option value="${k}" ${k === g.weight ? 'selected' : ''}>${v.label}（${v.w} mm）</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="tip" id="grid-info"></div>
+      <div class="tip">🖨️ 列印時：縮放選「<strong>實際大小 / 100%</strong>」、邊界選「<strong>無</strong>」。印好用尺量一格，應該剛好 <strong id="grid-measure">${g.cellCm}</strong> 公分。要最準請用電腦列印，iPad 有時會自動縮小一點。</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">預覽</div>
+      <div id="grid-warn" style="color:var(--danger);font-size:13px;margin-bottom:8px;"></div>
+      <div id="grid-preview-container"></div>
+    </div>
+  `;
+
+  const cellEl = document.getElementById('grid-cell');
+  const colsEl = document.getElementById('grid-cols');
+  const rowsEl = document.getElementById('grid-rows');
+  const commit = () => { saveGridConfig(); updateGridPreview(); };
+
+  // 打字時即時更新（不重繪整頁，避免輸入框失焦）；打到一半的無效數字先不理
+  cellEl.addEventListener('input', () => {
+    const v = parseFloat(cellEl.value);
+    if (!(v >= 1 && v <= 40)) return;
+    gridConfig.cellCm = +v.toFixed(2);
+    commit();
+  });
+  const bindCount = (el, key) => el.addEventListener('input', () => {
+    const v = parseInt(el.value, 10);
+    if (!(v >= 1 && v <= 20)) return;
+    gridConfig[key] = v;
+    commit();
+  });
+  bindCount(colsEl, 'cols');
+  bindCount(rowsEl, 'rows');
+
+  document.querySelectorAll('#grid-presets button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      gridConfig.cellCm = parseFloat(btn.dataset.cm);
+      cellEl.value = gridConfig.cellCm;
+      commit();
+    });
+  });
+  document.getElementById('grid-swap').addEventListener('click', () => {
+    [gridConfig.cols, gridConfig.rows] = [gridConfig.rows, gridConfig.cols];
+    colsEl.value = gridConfig.cols;
+    rowsEl.value = gridConfig.rows;
+    commit();
+  });
+  [['grid-paper', 'paper'], ['grid-orient', 'orient'], ['grid-guide', 'guide'], ['grid-color', 'lineColor'], ['grid-weight', 'weight']]
+    .forEach(([id, key]) => document.getElementById(id).addEventListener('change', (e) => {
+      gridConfig[key] = e.target.value;
+      commit();
+    }));
+
+  updateGridPreview();
+}
+
+// 紙張方向與尺寸：「自動」時直式放得下就用直式，否則改橫式
+function gridPageSize() {
+  const p = PAPERS[gridConfig.paper] || PAPERS.A4;
+  const cell = gridConfig.cellCm * 10;
+  const gw = cell * gridConfig.cols, gh = cell * gridConfig.rows;
+  const fitsIn = (w, h) => gw <= w + 0.01 && gh <= h + 0.01;
+  let landscape = gridConfig.orient === 'landscape';
+  if (gridConfig.orient === 'auto') landscape = !fitsIn(p.w, p.h) && fitsIn(p.h, p.w);
+  const W = landscape ? p.h : p.w, H = landscape ? p.w : p.h;
+  return { W, H, landscape, cell, gw, gh, fits: fitsIn(W, H) };
+}
+
+// 整張格子紙（mm 精準）：SVG 畫在紙張正中間
+function buildGridPaperHTML() {
+  const { W, H, landscape, cell, gw, gh, fits } = gridPageSize();
+  const { cols, rows, guide } = gridConfig;
+  const color = SHEET_LINE_COLORS[gridConfig.lineColor] || SHEET_LINE_COLORS.red;
+  const lw = (GRID_WEIGHTS[gridConfig.weight] || GRID_WEIGHTS.mid).w;
+  const ox = (W - gw) / 2, oy = (H - gh) / 2;
+  const n = v => +v.toFixed(3);
+  let shapes = '';
+
+  // 輔助虛線先畫，格線蓋在上面
+  if (guide && guide !== 'none') {
+    let d = '';
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const x = c * cell, y = r * cell;
+        if (guide === 'tian' || guide === 'mi') {
+          d += `M${n(x + cell / 2)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell / 2)}H${n(x + cell)}`;
+        }
+        if (guide === 'mi') {
+          d += `M${n(x)} ${n(y)}L${n(x + cell)} ${n(y + cell)}M${n(x + cell)} ${n(y)}L${n(x)} ${n(y + cell)}`;
+        }
+        if (guide === 'jiu') {
+          [1 / 3, 2 / 3].forEach(t => {
+            d += `M${n(x + cell * t)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell * t)}H${n(x + cell)}`;
+          });
+        }
+      }
+    }
+    shapes += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${n(Math.max(0.2, lw * 0.6))}" stroke-dasharray="2 1.5" stroke-opacity="0.6"/>`;
+  }
+  // 格線（線的中心剛好在格子邊界上，量起來每格就是設定的公分數）
+  let d = '';
+  for (let k = 1; k < cols; k++) d += `M${n(k * cell)} 0V${n(gh)}`;
+  for (let k = 1; k < rows; k++) d += `M0 ${n(k * cell)}H${n(gw)}`;
+  if (d) shapes += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${lw}"/>`;
+  shapes += `<rect x="0" y="0" width="${n(gw)}" height="${n(gh)}" fill="none" stroke="${color}" stroke-width="${n(lw + 0.3)}"/>`;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(gw)} ${n(gh)}" style="position:absolute;left:${n(ox)}mm;top:${n(oy)}mm;width:${n(gw)}mm;height:${n(gh)}mm;overflow:visible;">${shapes}</svg>`;
+  const html = `<div class="print-sheet" style="width:${W}mm;height:${H}mm;overflow:hidden;">${svg}</div>`;
+  return { html, W, H, landscape, fits, cell, gw, gh, ox, oy };
+}
+
+function updateGridPreview() {
+  const box = document.getElementById('grid-preview-container');
+  if (!box) return;
+  const r = buildGridPaperHTML();
+  const s = Math.min(1, 620 / (r.W * MM2PX));
+  box.innerHTML = `
+    <div class="sheet-preview-wrap">
+      <div class="sheet-clip" style="width:${(r.W * MM2PX * s).toFixed(0)}px;height:${(r.H * MM2PX * s).toFixed(0)}px;overflow:hidden;">
+        <div style="transform:scale(${s});transform-origin:top left;">${r.html}</div>
+      </div>
+    </div>
+  `;
+
+  const { cols, rows, paper, cellCm } = gridConfig;
+  document.querySelectorAll('#grid-presets button').forEach(b => {
+    b.classList.toggle('active', Math.abs(parseFloat(b.dataset.cm) - cellCm) < 1e-6);
+  });
+  const measure = document.getElementById('grid-measure');
+  if (measure) measure.textContent = cellCm;
+
+  const info = document.getElementById('grid-info');
+  if (info) {
+    info.innerHTML = `格子總大小 <strong>${cmText(r.gw)} × ${cmText(r.gh)} 公分</strong>（橫 ${cols} × 直 ${rows} ＝ ${cols * rows} 格）｜`
+      + `紙張 ${paper} ${r.landscape ? '橫式' : '直式'}（${cmText(r.W)} × ${cmText(r.H)} 公分）｜`
+      + (r.fits ? `四周留白：左右各 ${cmText(r.ox)}、上下各 ${cmText(r.oy)} 公分` : '放不下');
+  }
+
+  const warn = document.getElementById('grid-warn');
+  if (!warn) return;
+  if (!r.fits) {
+    const fitOptions = [];
+    Object.entries(PAPERS).forEach(([k, p]) => {
+      if (r.gw <= p.w + 0.01 && r.gh <= p.h + 0.01) fitOptions.push(`${k} 直式`);
+      else if (r.gw <= p.h + 0.01 && r.gh <= p.w + 0.01) fitOptions.push(`${k} 橫式`);
+    });
+    const maxCols = Math.floor((r.W + 0.01) / r.cell), maxRows = Math.floor((r.H + 0.01) / r.cell);
+    warn.textContent = `⚠️ 放不下：格子 ${cmText(r.gw)} × ${cmText(r.gh)} 公分比紙張大，印出來會被切掉。`
+      + (fitOptions.length ? `改用 ${fitOptions.join('、')} 就放得下；` : '')
+      + `這個大小在 ${paper} ${r.landscape ? '橫式' : '直式'}最多放橫 ${maxCols} × 直 ${maxRows} 格。`;
+  } else if (Math.min(r.ox, r.oy) < 5) {
+    warn.textContent = `⚠️ 格子離紙邊只剩 ${cmText(Math.min(r.ox, r.oy))} 公分，有些印表機印不到這麼邊，外框可能會被切掉。`;
+  } else {
+    warn.textContent = '';
+  }
+}
+
+function printGridPaper() {
+  const r = buildGridPaperHTML();
+  if (!r.fits && !confirm('格子比紙張大，印出來會被切掉。還是要印嗎？')) return;
+  printHTML(r.html, r.W, r.H);
 }
 
 // =================================================================
@@ -3688,6 +3958,7 @@ function init() {
 
   loadApiConfig();
   loadSheetConfig();
+  loadGridConfig();
 
   // Tab bindings
   document.querySelectorAll('.tab').forEach(t => {
@@ -3714,7 +3985,7 @@ function init() {
 
   // 網址加 #sheet、#students… 直接開到該分頁；#sheet/k4、#sheet/lang 指定題型
   const [hashView, hashArg] = location.hash.slice(1).split('/');
-  if (['competitions', 'books', 'lookup', 'upload', 'sheet', 'students'].includes(hashView)) {
+  if (['competitions', 'books', 'lookup', 'upload', 'sheet', 'grid', 'students'].includes(hashView)) {
     view = { name: hashView, params: {} };
     if (hashView === 'sheet' && (hashArg === 'k4' || hashArg === 'lang')) sheetConfig.type = hashArg;
   }
