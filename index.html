@@ -52,6 +52,8 @@
   /* ===== Top bar ===== */
   .topbar {
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
     align-items: center;
     justify-content: space-between;
     padding: 14px 32px;
@@ -67,7 +69,7 @@
   .footer-hint {
     padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
   }
-  .topbar-left { display: flex; align-items: center; gap: 24px; }
+  .topbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-width: 0; }
   .brand {
     font-weight: 600;
     font-size: 15px;
@@ -78,7 +80,8 @@
     font-size: 13px;
     margin-left: 8px;
   }
-  .tabs { display: flex; gap: 4px; }
+  /* 分頁放不下時整排左右滑，字不要被擠成一字一行 */
+  .tabs { display: flex; gap: 4px; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .tab {
     padding: 6px 12px;
     border-radius: var(--radius);
@@ -87,10 +90,13 @@
     font-size: 14px;
     user-select: none;
     transition: background 0.1s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .tab:hover { background: var(--bg-hover); }
   .tab.active { background: var(--bg-soft); color: var(--text); font-weight: 500; }
-  .topbar-right { display: flex; gap: 6px; }
+  .topbar-right { display: flex; flex-wrap: wrap; gap: 6px; }
+  .topbar-right button { white-space: nowrap; }
 
   /* ===== Buttons ===== */
   button, .btn {
@@ -793,14 +799,24 @@
     color: #fff;
     border-color: var(--text);
   }
+  .mode-pills button:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* Responsive */
   @media (max-width: 720px) {
-    .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .topbar {
+      padding: calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left));
+      gap: 8px;
+    }
+    .topbar-left { gap: 8px; width: 100%; }
+    .tabs { width: 100%; padding-bottom: 2px; }
     .container { padding: 20px 16px; }
+    .page-header { flex-wrap: wrap; gap: 12px; }
     .form-grid { grid-template-columns: 1fr; }
     .stats-grid { grid-template-columns: repeat(2, 1fr); }
     .page-title { font-size: 22px; }
+    .table-wrap { overflow-x: auto; }
+    .table-wrap table { min-width: 640px; }
+    .sheet-preview-wrap { padding: 12px; }
   }
 </style>
 </head>
@@ -823,6 +839,7 @@
     </div>
   </div>
   <div class="topbar-right">
+    <button class="ghost sm" id="btn-refresh" title="抓網站上的最新版本，資料不會動">🔄 更新版本</button>
     <button class="ghost sm" id="btn-settings" title="AI 辨識 API 設定">⚙️ 設定</button>
     <button class="ghost sm" id="btn-export" title="把目前資料下載為 JSON 備份">⬇ 匯出 JSON</button>
     <button class="ghost sm" id="btn-import" title="從 JSON 檔還原資料">⬆ 匯入 JSON</button>
@@ -917,6 +934,7 @@ const GRID_GUIDES = [
   { key: 'jiu',   label: '九宮格（井字格）' },
 ];
 const GRID_WEIGHTS = { thin: { label: '細', w: 0.3 }, mid: { label: '中', w: 0.5 }, bold: { label: '粗', w: 0.8 } };  // 格線粗細（mm）
+const GRID_FRAME_GAPS = [0.5, 0.6, 1];   // 外框離格子幾公分（線中心到線中心）
 
 // ---------- State ----------
 let db = null;
@@ -980,6 +998,9 @@ let gridConfig = {
   guides: { cross: false, mi: false, jiu: false },   // 都不勾＝純方格
   lineColor: 'red',
   weight: 'mid',
+  frame: false,       // 格子外面再加一個框
+  frameGapCm: 0.5,    // 外框離格子幾公分
+  frameWeight: 'thin',
 };
 function loadGridConfig() {
   try {
@@ -3286,7 +3307,7 @@ function updateSheetPreview() {
   const box = document.getElementById('sheet-preview-container');
   if (!box) return;
   const { html, W, H, warn } = buildSheetHTML();
-  const s = Math.min(1, 620 / (W * MM2PX));
+  const s = Math.min(1, previewWidth(box) / (W * MM2PX));
   box.innerHTML = `
     <div class="sheet-preview-wrap">
       <div class="sheet-clip" style="width:${(W * MM2PX * s).toFixed(0)}px;height:${(H * MM2PX * s).toFixed(0)}px;overflow:hidden;">
@@ -3443,6 +3464,12 @@ function printSheet() {
   printHTML(r.html, r.W, r.H);
 }
 
+// 預覽圖寬度：最多 620px，手機上縮到放得進畫面
+function previewWidth(box) {
+  const pad = window.innerWidth <= 720 ? 26 : 50;   // .sheet-preview-wrap 左右 padding＋邊框
+  return Math.max(200, Math.min(620, (box.clientWidth || 620) - pad));
+}
+
 // 只印傳進來的那一張（紙張大小 wMm × hMm、無邊界）
 function printHTML(html, wMm, hMm) {
   let st = document.getElementById('page-size-style');
@@ -3493,6 +3520,29 @@ function renderGridPaper(app) {
         <div class="field">
           <label>&nbsp;</label>
           <button type="button" id="grid-swap">⇄ 橫直對調</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">外框（選填）</div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="grid-frame" ${g.frame ? 'checked' : ''} style="width:auto;" />
+        <span>格子外面再加一個框</span>
+      </label>
+      <div class="mode-pills" id="grid-gap-presets">
+        ${GRID_FRAME_GAPS.map(v => `<button class="sm" data-gap="${v}" ${g.frame ? '' : 'disabled'}>距離 ${v} 公分</button>`).join('')}
+      </div>
+      <div class="sheet-controls">
+        <div class="field">
+          <label>自己設定距離（公分，可打小數點）</label>
+          <input type="number" id="grid-gap" min="0.1" max="10" step="0.1" value="${g.frameGapCm}" ${g.frame ? '' : 'disabled'} />
+        </div>
+        <div class="field">
+          <label>外框線條粗細</label>
+          <select id="grid-frame-weight" ${g.frame ? '' : 'disabled'}>
+            ${Object.entries(GRID_WEIGHTS).map(([k, v]) => `<option value="${k}" ${k === (g.frameWeight || 'thin') ? 'selected' : ''}>${v.label}（${v.w} mm）</option>`).join('')}
+          </select>
         </div>
       </div>
     </div>
@@ -3595,6 +3645,33 @@ function renderGridPaper(app) {
     commit();
   }));
 
+  // 外框：沒勾的時候距離不能調
+  const gapEl = document.getElementById('grid-gap');
+  const gapBtns = document.querySelectorAll('#grid-gap-presets button');
+  const frameWeightEl = document.getElementById('grid-frame-weight');
+  document.getElementById('grid-frame').addEventListener('change', (e) => {
+    gridConfig.frame = e.target.checked;
+    gapEl.disabled = !gridConfig.frame;
+    frameWeightEl.disabled = !gridConfig.frame;
+    gapBtns.forEach(b => { b.disabled = !gridConfig.frame; });
+    commit();
+  });
+  frameWeightEl.addEventListener('change', () => {
+    gridConfig.frameWeight = frameWeightEl.value;
+    commit();
+  });
+  gapBtns.forEach(btn => btn.addEventListener('click', () => {
+    gridConfig.frameGapCm = parseFloat(btn.dataset.gap);
+    gapEl.value = gridConfig.frameGapCm;
+    commit();
+  }));
+  gapEl.addEventListener('input', () => {
+    const v = parseFloat(gapEl.value);
+    if (!(v >= 0.1 && v <= 10)) return;
+    gridConfig.frameGapCm = +v.toFixed(2);
+    commit();
+  });
+
   updateGridPreview();
 }
 
@@ -3603,16 +3680,18 @@ function gridPageSize() {
   const p = PAPERS[gridConfig.paper] || PAPERS.A4;
   const cell = gridConfig.cellCm * 10;
   const gw = cell * gridConfig.cols, gh = cell * gridConfig.rows;
-  const fitsIn = (w, h) => gw <= w + 0.01 && gh <= h + 0.01;
+  const gap = gridConfig.frame ? gridConfig.frameGapCm * 10 : 0;
+  const tw = gw + gap * 2, th = gh + gap * 2;   // 含外框的總大小
+  const fitsIn = (w, h) => tw <= w + 0.01 && th <= h + 0.01;
   let landscape = gridConfig.orient === 'landscape';
   if (gridConfig.orient === 'auto') landscape = !fitsIn(p.w, p.h) && fitsIn(p.h, p.w);
   const W = landscape ? p.h : p.w, H = landscape ? p.w : p.h;
-  return { W, H, landscape, cell, gw, gh, fits: fitsIn(W, H) };
+  return { W, H, landscape, cell, gw, gh, gap, tw, th, fits: fitsIn(W, H) };
 }
 
 // 整張格子紙（mm 精準）：SVG 畫在紙張正中間
 function buildGridPaperHTML() {
-  const { W, H, landscape, cell, gw, gh, fits } = gridPageSize();
+  const { W, H, landscape, cell, gw, gh, gap, tw, th, fits } = gridPageSize();
   const { cols, rows } = gridConfig;
   const gs = gridConfig.guides || {};
   const wantCross = gs.cross || gs.mi, wantDiag = gs.mi, wantJiu = gs.jiu;
@@ -3649,17 +3728,21 @@ function buildGridPaperHTML() {
   for (let k = 1; k < rows; k++) d += `M0 ${n(k * cell)}H${n(gw)}`;
   if (d) shapes += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${lw}"/>`;
   shapes += `<rect x="0" y="0" width="${n(gw)}" height="${n(gh)}" fill="none" stroke="${color}" stroke-width="${n(lw + 0.3)}"/>`;
+  if (gap > 0) {
+    const fw = (GRID_WEIGHTS[gridConfig.frameWeight] || GRID_WEIGHTS.thin).w;
+    shapes += `<rect x="${n(-gap)}" y="${n(-gap)}" width="${n(tw)}" height="${n(th)}" fill="none" stroke="${color}" stroke-width="${fw}"/>`;
+  }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(gw)} ${n(gh)}" style="position:absolute;left:${n(ox)}mm;top:${n(oy)}mm;width:${n(gw)}mm;height:${n(gh)}mm;overflow:visible;">${shapes}</svg>`;
   const html = `<div class="print-sheet" style="width:${W}mm;height:${H}mm;overflow:hidden;">${svg}</div>`;
-  return { html, W, H, landscape, fits, cell, gw, gh, ox, oy };
+  return { html, W, H, landscape, fits, cell, gw, gh, gap, tw, th, ox: (W - tw) / 2, oy: (H - th) / 2 };
 }
 
 function updateGridPreview() {
   const box = document.getElementById('grid-preview-container');
   if (!box) return;
   const r = buildGridPaperHTML();
-  const s = Math.min(1, 620 / (r.W * MM2PX));
+  const s = Math.min(1, previewWidth(box) / (r.W * MM2PX));
   box.innerHTML = `
     <div class="sheet-preview-wrap">
       <div class="sheet-clip" style="width:${(r.W * MM2PX * s).toFixed(0)}px;height:${(r.H * MM2PX * s).toFixed(0)}px;overflow:hidden;">
@@ -3672,30 +3755,36 @@ function updateGridPreview() {
   document.querySelectorAll('#grid-presets button').forEach(b => {
     b.classList.toggle('active', Math.abs(parseFloat(b.dataset.cm) - cellCm) < 1e-6);
   });
+  document.querySelectorAll('#grid-gap-presets button').forEach(b => {
+    b.classList.toggle('active', gridConfig.frame && Math.abs(parseFloat(b.dataset.gap) - gridConfig.frameGapCm) < 1e-6);
+  });
   const measure = document.getElementById('grid-measure');
   if (measure) measure.textContent = cellCm;
 
   const info = document.getElementById('grid-info');
   if (info) {
     info.innerHTML = `格子總大小 <strong>${cmText(r.gw)} × ${cmText(r.gh)} 公分</strong>（橫 ${cols} × 直 ${rows} ＝ ${cols * rows} 格）｜`
+      + (r.gap ? `加外框（距離 ${cmText(r.gap)} 公分）後 <strong>${cmText(r.tw)} × ${cmText(r.th)} 公分</strong>｜` : '')
       + `紙張 ${paper} ${r.landscape ? '橫式' : '直式'}（${cmText(r.W)} × ${cmText(r.H)} 公分）｜`
       + (r.fits ? `四周留白：左右各 ${cmText(r.ox)}、上下各 ${cmText(r.oy)} 公分` : '放不下');
   }
 
   const warn = document.getElementById('grid-warn');
   if (!warn) return;
+  const what = r.gap ? '格子加外框' : '格子';
   if (!r.fits) {
     const fitOptions = [];
     Object.entries(PAPERS).forEach(([k, p]) => {
-      if (r.gw <= p.w + 0.01 && r.gh <= p.h + 0.01) fitOptions.push(`${k} 直式`);
-      else if (r.gw <= p.h + 0.01 && r.gh <= p.w + 0.01) fitOptions.push(`${k} 橫式`);
+      if (r.tw <= p.w + 0.01 && r.th <= p.h + 0.01) fitOptions.push(`${k} 直式`);
+      else if (r.tw <= p.h + 0.01 && r.th <= p.w + 0.01) fitOptions.push(`${k} 橫式`);
     });
-    const maxCols = Math.floor((r.W + 0.01) / r.cell), maxRows = Math.floor((r.H + 0.01) / r.cell);
-    warn.textContent = `⚠️ 放不下：格子 ${cmText(r.gw)} × ${cmText(r.gh)} 公分比紙張大，印出來會被切掉。`
+    const maxCols = Math.max(0, Math.floor((r.W - r.gap * 2 + 0.01) / r.cell));
+    const maxRows = Math.max(0, Math.floor((r.H - r.gap * 2 + 0.01) / r.cell));
+    warn.textContent = `⚠️ 放不下：${what} ${cmText(r.tw)} × ${cmText(r.th)} 公分比紙張大，印出來會被切掉。`
       + (fitOptions.length ? `改用 ${fitOptions.join('、')} 就放得下；` : '')
       + `這個大小在 ${paper} ${r.landscape ? '橫式' : '直式'}最多放橫 ${maxCols} × 直 ${maxRows} 格。`;
   } else if (Math.min(r.ox, r.oy) < 5) {
-    warn.textContent = `⚠️ 格子離紙邊只剩 ${cmText(Math.min(r.ox, r.oy))} 公分，有些印表機印不到這麼邊，外框可能會被切掉。`;
+    warn.textContent = `⚠️ ${what}離紙邊只剩 ${cmText(Math.min(r.ox, r.oy))} 公分，有些印表機印不到這麼邊，最外面的框可能會被切掉。`;
   } else {
     warn.textContent = '';
   }
@@ -3957,6 +4046,27 @@ function registerServiceWorker() {
   });
 }
 
+// 主畫面上的 App 不能下拉重整，用這顆按鈕抓最新版；資料存在這台裝置上，不受影響
+async function refreshApp() {
+  toast('正在抓最新版本…');
+  try {
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      await reg.update();
+      const nw = reg.installing || reg.waiting;
+      if (nw) {
+        await new Promise((resolve) => {
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'activated' || nw.state === 'redundant') resolve();
+          });
+          setTimeout(resolve, 4000);
+        });
+      }
+    }
+  } catch (e) { /* 離線或檢查失敗：照樣重新載入 */ }
+  location.reload();
+}
+
 // =================================================================
 // Init
 // =================================================================
@@ -3989,6 +4099,7 @@ function init() {
   });
 
   // Toolbar bindings
+  document.getElementById('btn-refresh').addEventListener('click', refreshApp);
   document.getElementById('btn-settings').addEventListener('click', openApiSettings);
   document.getElementById('btn-export').addEventListener('click', exportJSON);
   document.getElementById('btn-reset').addEventListener('click', resetSeed);
