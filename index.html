@@ -802,6 +802,45 @@
   .mode-pills button:disabled { opacity: 0.4; cursor: not-allowed; }
   a.btn { display: inline-block; text-decoration: none; }
 
+  /* ===== 格子紙：每種線的粗細與顏色 ===== */
+  .line-rows { display: flex; flex-direction: column; gap: 8px; }
+  .line-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .line-name { min-width: 200px; display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+  .line-name input { width: auto; }
+  .line-thick { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-soft); }
+  .line-thick input[type="number"] { width: 90px; }
+  .line-thick select { width: auto; }
+  .line-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .line-row.off .line-thick, .line-row.off .line-colors { opacity: 0.4; }
+  .swatch {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--border-strong);
+    cursor: pointer;
+  }
+  .swatch.active { box-shadow: 0 0 0 2px var(--text); }
+  .swatch:disabled { cursor: not-allowed; }
+  .line-colors input[type="color"] {
+    width: 40px;
+    height: 30px;
+    padding: 2px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg);
+    cursor: pointer;
+  }
+
   /* Responsive */
   @media (max-width: 720px) {
     .topbar {
@@ -936,6 +975,24 @@ const GRID_GUIDES = [
 ];
 const GRID_WEIGHTS = { thin: { label: '細', w: 0.3 }, mid: { label: '中', w: 0.5 }, bold: { label: '粗', w: 0.8 } };  // 格線粗細（mm）
 const GRID_FRAME_GAPS = [0.5, 0.6, 1];   // 外框離格子幾公分（線中心到線中心）
+// 每一種線的預設粗細（mm）、顯示單位、顏色。輔助線預設淺紅（＝紅線 60% 濃度印在白紙上的顏色）
+const GRID_LINE_DEFAULTS = {
+  grid:  { mm: 0.5, unit: 'mm', color: '#c0392b' },
+  frame: { mm: 0.3, unit: 'mm', color: '#c0392b' },
+  cross: { mm: 0.3, unit: 'mm', color: '#d98880' },
+  mi:    { mm: 0.3, unit: 'mm', color: '#d98880' },
+  jiu:   { mm: 0.3, unit: 'mm', color: '#d98880' },
+};
+const LINE_SWATCHES = [
+  { hex: '#c0392b', label: '紅' },
+  { hex: '#d98880', label: '淺紅' },
+  { hex: '#8b1a1a', label: '深紅' },
+  { hex: '#333333', label: '黑' },
+  { hex: '#8f8f8f', label: '灰' },
+  { hex: '#bfbfbf', label: '淺灰' },
+  { hex: '#1f5fbf', label: '藍' },
+];
+const cloneLineDefaults = () => JSON.parse(JSON.stringify(GRID_LINE_DEFAULTS));
 
 // ---------- State ----------
 let db = null;
@@ -997,11 +1054,9 @@ let gridConfig = {
   paper: 'A4',
   orient: 'auto',     // auto 放得下的方向 | portrait 直式 | landscape 橫式
   guides: { cross: false, mi: false, jiu: false },   // 都不勾＝純方格
-  lineColor: 'red',
-  weight: 'mid',
   frame: false,       // 格子外面再加一個框
   frameGapCm: 0.5,    // 外框離格子幾公分
-  frameWeight: 'thin',
+  lines: cloneLineDefaults(),   // grid 格子線（內框）／frame 外框線／cross 十字格／mi 米字格／jiu 九宮格
 };
 function loadGridConfig() {
   try {
@@ -1012,7 +1067,18 @@ function loadGridConfig() {
     if (saved.guides === undefined && saved.guide) {
       saved.guides = { cross: saved.guide === 'tian', mi: saved.guide === 'mi', jiu: saved.guide === 'jiu' };
     }
-    delete saved.guide;
+    // v9~v11 只有一個線條顏色（red/black/gray）和粗細（細/中/粗），換成每種線各自設定
+    const lines = cloneLineDefaults();
+    if (saved.lines) {
+      Object.keys(lines).forEach(k => Object.assign(lines[k], saved.lines[k] || {}));
+    } else {
+      const hex = SHEET_LINE_COLORS[saved.lineColor];
+      if (hex) { lines.grid.color = hex; lines.frame.color = hex; }
+      if (GRID_WEIGHTS[saved.weight]) lines.grid.mm = GRID_WEIGHTS[saved.weight].w;
+      if (GRID_WEIGHTS[saved.frameWeight]) lines.frame.mm = GRID_WEIGHTS[saved.frameWeight].w;
+    }
+    ['guide', 'lineColor', 'weight', 'frameWeight'].forEach(k => delete saved[k]);
+    saved.lines = lines;
     gridConfig = { ...gridConfig, ...saved };
   } catch (e) { /* ignore */ }
 }
@@ -3532,30 +3598,34 @@ function renderGridPaper(app) {
     </div>
 
     <div class="section">
+      <div class="section-title">格子線與輔助線（粗細、顏色）</div>
+      <div class="line-rows">
+        ${lineRowHTML('grid', '格子線（內框）', false)}
+        ${GRID_GUIDES.map(gd => lineRowHTML(gd.key, gd.label, true)).join('')}
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:var(--text-faint);">輔助線可以複選，都不勾＝純方格。粗細可以自己打，單位選公釐（mm）或公分（cm）；常用：細 0.3、中 0.5、粗 0.8 公釐。顏色點圓點，或點最右邊的色塊自己挑。</div>
+    </div>
+
+    <div class="section">
       <div class="section-title">外框（選填）</div>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">
         <input type="checkbox" id="grid-frame" ${g.frame ? 'checked' : ''} style="width:auto;" />
         <span>格子外面再加一個框</span>
       </label>
       <div class="mode-pills" id="grid-gap-presets">
-        ${GRID_FRAME_GAPS.map(v => `<button class="sm" data-gap="${v}" ${g.frame ? '' : 'disabled'}>距離 ${v} 公分</button>`).join('')}
+        ${GRID_FRAME_GAPS.map(v => `<button class="sm" data-gap="${v}">距離 ${v} 公分</button>`).join('')}
       </div>
       <div class="sheet-controls">
         <div class="field">
           <label>自己設定距離（公分，可打小數點）</label>
-          <input type="number" id="grid-gap" min="0.1" max="10" step="0.1" value="${g.frameGapCm}" ${g.frame ? '' : 'disabled'} />
-        </div>
-        <div class="field">
-          <label>外框線條粗細</label>
-          <select id="grid-frame-weight" ${g.frame ? '' : 'disabled'}>
-            ${Object.entries(GRID_WEIGHTS).map(([k, v]) => `<option value="${k}" ${k === (g.frameWeight || 'thin') ? 'selected' : ''}>${v.label}（${v.w} mm）</option>`).join('')}
-          </select>
+          <input type="number" id="grid-gap" min="0.1" max="10" step="0.1" value="${g.frameGapCm}" />
         </div>
       </div>
+      <div class="line-rows">${lineRowHTML('frame', '外框線', false)}</div>
     </div>
 
     <div class="section">
-      <div class="section-title">紙張與線條</div>
+      <div class="section-title">紙張</div>
       <div class="sheet-controls">
         <div class="field">
           <label>紙張</label>
@@ -3569,31 +3639,6 @@ function renderGridPaper(app) {
             <option value="auto" ${g.orient === 'auto' ? 'selected' : ''}>自動（放得下的方向）</option>
             <option value="portrait" ${g.orient === 'portrait' ? 'selected' : ''}>直式</option>
             <option value="landscape" ${g.orient === 'landscape' ? 'selected' : ''}>橫式</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>格內輔助線（可複選，都不勾＝純方格）</label>
-          <div style="display:flex;flex-direction:column;gap:4px;">
-            ${GRID_GUIDES.map(gd => `
-              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                <input type="checkbox" data-guide="${gd.key}" ${(g.guides || {})[gd.key] ? 'checked' : ''} style="width:auto;" />
-                ${gd.label}
-              </label>
-            `).join('')}
-          </div>
-        </div>
-        <div class="field">
-          <label>線條顏色</label>
-          <select id="grid-color">
-            <option value="red" ${g.lineColor === 'red' ? 'selected' : ''}>紅色</option>
-            <option value="black" ${g.lineColor === 'black' ? 'selected' : ''}>黑色</option>
-            <option value="gray" ${g.lineColor === 'gray' ? 'selected' : ''}>淺灰</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>線條粗細</label>
-          <select id="grid-weight">
-            ${Object.entries(GRID_WEIGHTS).map(([k, v]) => `<option value="${k}" ${k === g.weight ? 'selected' : ''}>${v.label}（${v.w} mm）</option>`).join('')}
           </select>
         </div>
       </div>
@@ -3642,32 +3687,25 @@ function renderGridPaper(app) {
     rowsEl.value = gridConfig.rows;
     commit();
   });
-  [['grid-paper', 'paper'], ['grid-orient', 'orient'], ['grid-color', 'lineColor'], ['grid-weight', 'weight']]
+  [['grid-paper', 'paper'], ['grid-orient', 'orient']]
     .forEach(([id, key]) => document.getElementById(id).addEventListener('change', (e) => {
       gridConfig[key] = e.target.value;
       commit();
     }));
   document.querySelectorAll('[data-guide]').forEach(cb => cb.addEventListener('change', () => {
     gridConfig.guides = { ...(gridConfig.guides || {}), [cb.dataset.guide]: cb.checked };
+    syncGridControlStates();
     commit();
   }));
+  Object.keys(GRID_LINE_DEFAULTS).forEach(key => bindLineRow(key, commit));
 
-  // 外框：沒勾的時候距離不能調
   const gapEl = document.getElementById('grid-gap');
-  const gapBtns = document.querySelectorAll('#grid-gap-presets button');
-  const frameWeightEl = document.getElementById('grid-frame-weight');
   document.getElementById('grid-frame').addEventListener('change', (e) => {
     gridConfig.frame = e.target.checked;
-    gapEl.disabled = !gridConfig.frame;
-    frameWeightEl.disabled = !gridConfig.frame;
-    gapBtns.forEach(b => { b.disabled = !gridConfig.frame; });
+    syncGridControlStates();
     commit();
   });
-  frameWeightEl.addEventListener('change', () => {
-    gridConfig.frameWeight = frameWeightEl.value;
-    commit();
-  });
-  gapBtns.forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#grid-gap-presets button').forEach(btn => btn.addEventListener('click', () => {
     gridConfig.frameGapCm = parseFloat(btn.dataset.gap);
     gapEl.value = gridConfig.frameGapCm;
     commit();
@@ -3679,7 +3717,82 @@ function renderGridPaper(app) {
     commit();
   });
 
+  syncGridControlStates();
   updateGridPreview();
+}
+
+// 一種線一列：（勾選）名稱｜粗細＋單位｜顏色
+function lineRowHTML(key, label, withCheckbox) {
+  const s = gridConfig.lines[key];
+  const cm = s.unit === 'cm';
+  return `
+    <div class="line-row" data-row="${key}">
+      <label class="line-name">
+        ${withCheckbox ? `<input type="checkbox" data-guide="${key}" ${(gridConfig.guides || {})[key] ? 'checked' : ''} />` : ''}
+        <span>${label}</span>
+      </label>
+      <div class="line-thick">
+        粗細
+        <input type="number" id="ln-${key}-thick" min="${cm ? 0.005 : 0.05}" max="${cm ? 1 : 10}" step="${cm ? 0.01 : 0.1}" value="${cm ? +(s.mm / 10).toFixed(4) : +s.mm.toFixed(3)}" />
+        <select id="ln-${key}-unit">
+          <option value="mm" ${cm ? '' : 'selected'}>公釐 mm</option>
+          <option value="cm" ${cm ? 'selected' : ''}>公分 cm</option>
+        </select>
+      </div>
+      <div class="line-colors">
+        ${LINE_SWATCHES.map(sw => `<button type="button" class="swatch${sw.hex === s.color ? ' active' : ''}" data-line="${key}" data-hex="${sw.hex}" title="${sw.label}" style="background:${sw.hex};"></button>`).join('')}
+        <input type="color" id="ln-${key}-color" value="${s.color}" title="自己挑顏色" />
+      </div>
+    </div>`;
+}
+
+function bindLineRow(key, commit) {
+  const thick = document.getElementById(`ln-${key}-thick`);
+  const unit = document.getElementById(`ln-${key}-unit`);
+  const color = document.getElementById(`ln-${key}-color`);
+  if (!thick) return;
+  const st = () => gridConfig.lines[key];
+  thick.addEventListener('input', () => {
+    const v = parseFloat(thick.value);
+    const mm = st().unit === 'cm' ? v * 10 : v;
+    if (!(mm >= 0.05 && mm <= 10)) return;   // 打到一半的數字先不理
+    st().mm = +mm.toFixed(3);
+    commit();
+  });
+  unit.addEventListener('change', () => {
+    // 換單位：粗細不變，只換顯示的數字
+    const cm = unit.value === 'cm';
+    st().unit = unit.value;
+    thick.min = cm ? '0.005' : '0.05';
+    thick.max = cm ? '1' : '10';
+    thick.step = cm ? '0.01' : '0.1';
+    thick.value = cm ? +(st().mm / 10).toFixed(4) : +st().mm.toFixed(3);
+    commit();
+  });
+  const setColor = (hex) => {
+    st().color = hex.toLowerCase();
+    color.value = st().color;
+    document.querySelectorAll(`.swatch[data-line="${key}"]`).forEach(b => b.classList.toggle('active', b.dataset.hex === st().color));
+    commit();
+  };
+  document.querySelectorAll(`.swatch[data-line="${key}"]`).forEach(b => b.addEventListener('click', () => setColor(b.dataset.hex)));
+  color.addEventListener('input', () => setColor(color.value));
+}
+
+// 沒勾的輔助線、沒開的外框：它們的粗細和顏色先不能調
+function syncGridControlStates() {
+  const gs = gridConfig.guides || {};
+  const on = { grid: true, frame: !!gridConfig.frame, cross: !!gs.cross, mi: !!gs.mi, jiu: !!gs.jiu };
+  Object.entries(on).forEach(([key, enabled]) => {
+    const row = document.querySelector(`.line-row[data-row="${key}"]`);
+    if (!row) return;
+    row.classList.toggle('off', !enabled);
+    row.querySelectorAll('.line-thick input, .line-thick select, .line-colors button, .line-colors input')
+      .forEach(el => { el.disabled = !enabled; });
+  });
+  const gapEl = document.getElementById('grid-gap');
+  if (gapEl) gapEl.disabled = !gridConfig.frame;
+  document.querySelectorAll('#grid-gap-presets button').forEach(b => { b.disabled = !gridConfig.frame; });
 }
 
 // 紙張方向與尺寸：「自動」時直式放得下就用直式，否則改橫式
@@ -3702,46 +3815,41 @@ function gridPaperLayers() {
   const { cell, gw, gh, gap } = size;
   const { cols, rows } = gridConfig;
   const gs = gridConfig.guides || {};
-  const wantCross = gs.cross || gs.mi, wantDiag = gs.mi, wantJiu = gs.jiu;
-  const lw = (GRID_WEIGHTS[gridConfig.weight] || GRID_WEIGHTS.mid).w;
+  const L = gridConfig.lines || cloneLineDefaults();
   const n = v => +v.toFixed(3);
   const layers = [];
-
-  // 輔助虛線先畫，格線蓋在上面
-  if (wantCross || wantDiag || wantJiu) {
+  const eachCell = (fn) => {
     let d = '';
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        const x = c * cell, y = r * cell;
-        if (wantCross) {
-          d += `M${n(x + cell / 2)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell / 2)}H${n(x + cell)}`;
-        }
-        if (wantDiag) {
-          d += `M${n(x)} ${n(y)}L${n(x + cell)} ${n(y + cell)}M${n(x + cell)} ${n(y)}L${n(x)} ${n(y + cell)}`;
-        }
-        if (wantJiu) {
-          [1 / 3, 2 / 3].forEach(t => {
-            d += `M${n(x + cell * t)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell * t)}H${n(x + cell)}`;
-          });
-        }
-      }
-    }
-    layers.push({ d, w: n(Math.max(0.2, lw * 0.6)), dash: [2, 1.5], opacity: 0.6 });
+    for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) d += fn(c * cell, r * cell);
+    return d;
+  };
+  // 虛線的段長跟著線的粗細放大，粗線才看得出是虛線
+  const guide = (d, s) => layers.push({ d, w: s.mm, color: s.color, dash: [n(Math.max(2, s.mm * 4)), n(Math.max(1.5, s.mm * 3))] });
+
+  // 輔助虛線先畫，格線蓋在上面。米字格本身含十字線；十字格也勾的時候，十字線用十字格的設定
+  if (gs.jiu) {
+    guide(eachCell((x, y) => [1 / 3, 2 / 3]
+      .map(t => `M${n(x + cell * t)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell * t)}H${n(x + cell)}`).join('')), L.jiu);
   }
-  // 格線（線的中心剛好在格子邊界上，量起來每格就是設定的公分數）
+  if (gs.cross || gs.mi) {
+    guide(eachCell((x, y) => `M${n(x + cell / 2)} ${n(y)}V${n(y + cell)}M${n(x)} ${n(y + cell / 2)}H${n(x + cell)}`),
+      gs.cross ? L.cross : L.mi);
+  }
+  if (gs.mi) {
+    guide(eachCell((x, y) => `M${n(x)} ${n(y)}L${n(x + cell)} ${n(y + cell)}M${n(x + cell)} ${n(y)}L${n(x)} ${n(y + cell)}`), L.mi);
+  }
+  // 格線＋內框（線的中心剛好在格子邊界上，量起來每格就是設定的公分數）
   let d = '';
   for (let k = 1; k < cols; k++) d += `M${n(k * cell)} 0V${n(gh)}`;
   for (let k = 1; k < rows; k++) d += `M0 ${n(k * cell)}H${n(gw)}`;
-  if (d) layers.push({ d, w: lw });
-  layers.push({ d: `M0 0H${n(gw)}V${n(gh)}H0Z`, w: n(lw + 0.3) });
+  d += `M0 0H${n(gw)}V${n(gh)}H0Z`;
+  layers.push({ d, w: L.grid.mm, color: L.grid.color });
   if (gap > 0) {
-    const fw = (GRID_WEIGHTS[gridConfig.frameWeight] || GRID_WEIGHTS.thin).w;
-    layers.push({ d: `M${n(-gap)} ${n(-gap)}H${n(gw + gap)}V${n(gh + gap)}H${n(-gap)}Z`, w: fw });
+    layers.push({ d: `M${n(-gap)} ${n(-gap)}H${n(gw + gap)}V${n(gh + gap)}H${n(-gap)}Z`, w: L.frame.mm, color: L.frame.color });
   }
   return {
     ...size,
     layers,
-    color: SHEET_LINE_COLORS[gridConfig.lineColor] || SHEET_LINE_COLORS.red,
     gx: (size.W - gw) / 2,   // 格子左上角在紙上的位置（置中）
     gy: (size.H - gh) / 2,
   };
@@ -3752,9 +3860,8 @@ function buildGridPaperHTML() {
   const g = gridPaperLayers();
   const n = v => +v.toFixed(3);
   const shapes = g.layers.map(l =>
-    `<path d="${l.d}" fill="none" stroke="${g.color}" stroke-width="${l.w}"`
+    `<path d="${l.d}" fill="none" stroke="${l.color}" stroke-width="${l.w}"`
     + (l.dash ? ` stroke-dasharray="${l.dash.join(' ')}"` : '')
-    + (l.opacity ? ` stroke-opacity="${l.opacity}"` : '')
     + '/>'
   ).join('');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(g.gw)} ${n(g.gh)}" style="position:absolute;left:${n(g.gx)}mm;top:${n(g.gy)}mm;width:${n(g.gw)}mm;height:${n(g.gh)}mm;overflow:visible;">${shapes}</svg>`;
@@ -3845,11 +3952,10 @@ function gridPaperToCanvas(dpi) {
   const { canvas, ctx, k } = makeSheetCanvas(g.W, g.H, dpi);
   ctx.translate(g.gx * k, g.gy * k);
   ctx.scale(k, k);
-  ctx.strokeStyle = g.color;
   g.layers.forEach(l => {
+    ctx.strokeStyle = l.color;
     ctx.lineWidth = l.w;
     ctx.setLineDash(l.dash || []);
-    ctx.globalAlpha = l.opacity || 1;
     ctx.stroke(new Path2D(l.d));
   });
   return canvas;
