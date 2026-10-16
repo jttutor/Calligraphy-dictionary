@@ -800,6 +800,7 @@
     border-color: var(--text);
   }
   .mode-pills button:disabled { opacity: 0.4; cursor: not-allowed; }
+  a.btn { display: inline-block; text-decoration: none; }
 
   /* Responsive */
   @media (max-width: 720px) {
@@ -926,7 +927,7 @@ const SHEET_LINE_COLORS = { red: '#c0392b', black: '#333333', gray: '#8f8f8f' };
 const MM2PX = 3.7795;
 
 // ===== 書法格子紙常數 =====
-const GRID_PRESETS = [8, 8.2, 8.5, 9, 9.5, 10];   // 每格公分
+const GRID_PRESETS = [7, 7.5, 8, 8.2, 8.5, 9, 9.5, 10];   // 每格公分（常用的；其他大小自己打）
 // 格內輔助線（可複選，勾的線全部疊在一起畫；米字格本身就含十字線）
 const GRID_GUIDES = [
   { key: 'cross', label: '十字格（田字格）' },
@@ -3025,7 +3026,10 @@ function renderSheet(app) {
         <h1 class="page-title">🖨️ 出題目</h1>
         <div class="page-subtitle">貼上題目文字，選格式與紙張，直接列印給學生看著練習。標點符號會自動忽略。</div>
       </div>
-      <button class="primary" onclick="printSheet()">🖨️ 列印</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="shareSheet()">📤 分享／存圖片</button>
+        <button class="primary" onclick="printSheet()">🖨️ 列印</button>
+      </div>
     </div>
 
     <div class="section">
@@ -3496,7 +3500,10 @@ function renderGridPaper(app) {
         <h1 class="page-title">📐 書法格子紙</h1>
         <div class="page-subtitle">照實際尺寸印出格子，可以墊在宣紙下面或直接練字。格子會放在紙張正中間。</div>
       </div>
-      <button class="primary" onclick="printGridPaper()">🖨️ 列印</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="shareGridPaper()">📤 分享／存圖片</button>
+        <button class="primary" onclick="printGridPaper()">🖨️ 列印</button>
+      </div>
     </div>
 
     <div class="section">
@@ -3689,17 +3696,16 @@ function gridPageSize() {
   return { W, H, landscape, cell, gw, gh, gap, tw, th, fits: fitsIn(W, H) };
 }
 
-// 整張格子紙（mm 精準）：SVG 畫在紙張正中間
-function buildGridPaperHTML() {
-  const { W, H, landscape, cell, gw, gh, gap, tw, th, fits } = gridPageSize();
+// 格子紙的所有線條（單位 mm，原點在格子左上角）。畫面、列印、存圖片都畫這一份，尺寸才會一致
+function gridPaperLayers() {
+  const size = gridPageSize();
+  const { cell, gw, gh, gap } = size;
   const { cols, rows } = gridConfig;
   const gs = gridConfig.guides || {};
   const wantCross = gs.cross || gs.mi, wantDiag = gs.mi, wantJiu = gs.jiu;
-  const color = SHEET_LINE_COLORS[gridConfig.lineColor] || SHEET_LINE_COLORS.red;
   const lw = (GRID_WEIGHTS[gridConfig.weight] || GRID_WEIGHTS.mid).w;
-  const ox = (W - gw) / 2, oy = (H - gh) / 2;
   const n = v => +v.toFixed(3);
-  let shapes = '';
+  const layers = [];
 
   // 輔助虛線先畫，格線蓋在上面
   if (wantCross || wantDiag || wantJiu) {
@@ -3720,22 +3726,44 @@ function buildGridPaperHTML() {
         }
       }
     }
-    shapes += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${n(Math.max(0.2, lw * 0.6))}" stroke-dasharray="2 1.5" stroke-opacity="0.6"/>`;
+    layers.push({ d, w: n(Math.max(0.2, lw * 0.6)), dash: [2, 1.5], opacity: 0.6 });
   }
   // 格線（線的中心剛好在格子邊界上，量起來每格就是設定的公分數）
   let d = '';
   for (let k = 1; k < cols; k++) d += `M${n(k * cell)} 0V${n(gh)}`;
   for (let k = 1; k < rows; k++) d += `M0 ${n(k * cell)}H${n(gw)}`;
-  if (d) shapes += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${lw}"/>`;
-  shapes += `<rect x="0" y="0" width="${n(gw)}" height="${n(gh)}" fill="none" stroke="${color}" stroke-width="${n(lw + 0.3)}"/>`;
+  if (d) layers.push({ d, w: lw });
+  layers.push({ d: `M0 0H${n(gw)}V${n(gh)}H0Z`, w: n(lw + 0.3) });
   if (gap > 0) {
     const fw = (GRID_WEIGHTS[gridConfig.frameWeight] || GRID_WEIGHTS.thin).w;
-    shapes += `<rect x="${n(-gap)}" y="${n(-gap)}" width="${n(tw)}" height="${n(th)}" fill="none" stroke="${color}" stroke-width="${fw}"/>`;
+    layers.push({ d: `M${n(-gap)} ${n(-gap)}H${n(gw + gap)}V${n(gh + gap)}H${n(-gap)}Z`, w: fw });
   }
+  return {
+    ...size,
+    layers,
+    color: SHEET_LINE_COLORS[gridConfig.lineColor] || SHEET_LINE_COLORS.red,
+    gx: (size.W - gw) / 2,   // 格子左上角在紙上的位置（置中）
+    gy: (size.H - gh) / 2,
+  };
+}
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(gw)} ${n(gh)}" style="position:absolute;left:${n(ox)}mm;top:${n(oy)}mm;width:${n(gw)}mm;height:${n(gh)}mm;overflow:visible;">${shapes}</svg>`;
-  const html = `<div class="print-sheet" style="width:${W}mm;height:${H}mm;overflow:hidden;">${svg}</div>`;
-  return { html, W, H, landscape, fits, cell, gw, gh, gap, tw, th, ox: (W - tw) / 2, oy: (H - th) / 2 };
+// 整張格子紙（mm 精準）：SVG 畫在紙張正中間
+function buildGridPaperHTML() {
+  const g = gridPaperLayers();
+  const n = v => +v.toFixed(3);
+  const shapes = g.layers.map(l =>
+    `<path d="${l.d}" fill="none" stroke="${g.color}" stroke-width="${l.w}"`
+    + (l.dash ? ` stroke-dasharray="${l.dash.join(' ')}"` : '')
+    + (l.opacity ? ` stroke-opacity="${l.opacity}"` : '')
+    + '/>'
+  ).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(g.gw)} ${n(g.gh)}" style="position:absolute;left:${n(g.gx)}mm;top:${n(g.gy)}mm;width:${n(g.gw)}mm;height:${n(g.gh)}mm;overflow:visible;">${shapes}</svg>`;
+  const html = `<div class="print-sheet" style="width:${g.W}mm;height:${g.H}mm;overflow:hidden;">${svg}</div>`;
+  return {
+    html, W: g.W, H: g.H, landscape: g.landscape, fits: g.fits, cell: g.cell,
+    gw: g.gw, gh: g.gh, gap: g.gap, tw: g.tw, th: g.th,
+    ox: (g.W - g.tw) / 2, oy: (g.H - g.th) / 2,   // 含外框時，最外面到紙邊的留白
+  };
 }
 
 function updateGridPreview() {
@@ -3794,6 +3822,163 @@ function printGridPaper() {
   const r = buildGridPaperHTML();
   if (!r.fits && !confirm('格子比紙張大，印出來會被切掉。還是要印嗎？')) return;
   printHTML(r.html, r.W, r.H);
+}
+
+// =================================================================
+// 存成圖片／分享（LINE、訊息、AirDrop、存到照片、無線列印）
+// =================================================================
+// 白底畫布：紙張 wMm × hMm。iPhone 畫布上限約 1600 萬像素，紙太大時自動降解析度
+function makeSheetCanvas(wMm, hMm, dpi = 300) {
+  const inW = wMm / 25.4, inH = hMm / 25.4;
+  const d = Math.min(dpi, Math.floor(Math.sqrt(16000000 / (inW * inH))));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(inW * d);
+  canvas.height = Math.round(inH * d);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  return { canvas, ctx, k: d / 25.4 };   // k：每公釐幾個像素
+}
+
+function gridPaperToCanvas(dpi) {
+  const g = gridPaperLayers();
+  const { canvas, ctx, k } = makeSheetCanvas(g.W, g.H, dpi);
+  ctx.translate(g.gx * k, g.gy * k);
+  ctx.scale(k, k);
+  ctx.strokeStyle = g.color;
+  g.layers.forEach(l => {
+    ctx.lineWidth = l.w;
+    ctx.setLineDash(l.dash || []);
+    ctx.globalAlpha = l.opacity || 1;
+    ctx.stroke(new Path2D(l.d));
+  });
+  return canvas;
+}
+
+// 出題目的 HTML 全部是 mm 絕對定位：照 inline style 把框線（border）和字畫到畫布上
+function sheetHTMLToCanvas(html, wMm, hMm, dpi) {
+  const { canvas, ctx, k } = makeSheetCanvas(wMm, hMm, dpi);
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const num = v => parseFloat(v) || 0;   // inline style 都是 mm
+  const SIDES = ['Top', 'Right', 'Bottom', 'Left'];
+
+  const drawBorders = (s, x, y) => {
+    const bw = {};
+    SIDES.forEach(sd => {
+      const st = s[`border${sd}Style`];
+      bw[sd] = st && st !== 'none' ? num(s[`border${sd}Width`]) : 0;
+    });
+    if (!SIDES.some(sd => bw[sd] > 0)) return;
+    const borderBox = s.boxSizing === 'border-box';
+    const w = num(s.width) + (borderBox ? 0 : bw.Left + bw.Right);
+    const h = num(s.height) + (borderBox ? 0 : bw.Top + bw.Bottom);
+    SIDES.forEach(sd => {
+      const t = bw[sd];
+      if (!t) return;
+      ctx.strokeStyle = s[`border${sd}Color`] || '#000';
+      ctx.lineWidth = t * k;
+      ctx.setLineDash(s[`border${sd}Style`] === 'dashed' ? [2 * k, 1.5 * k] : []);
+      ctx.beginPath();
+      if (sd === 'Top')    { ctx.moveTo(x * k, (y + t / 2) * k);     ctx.lineTo((x + w) * k, (y + t / 2) * k); }
+      if (sd === 'Bottom') { ctx.moveTo(x * k, (y + h - t / 2) * k); ctx.lineTo((x + w) * k, (y + h - t / 2) * k); }
+      if (sd === 'Left')   { ctx.moveTo((x + t / 2) * k, y * k);     ctx.lineTo((x + t / 2) * k, (y + h) * k); }
+      if (sd === 'Right')  { ctx.moveTo((x + w - t / 2) * k, y * k); ctx.lineTo((x + w - t / 2) * k, (y + h) * k); }
+      ctx.stroke();
+    });
+  };
+
+  const drawText = (el, s, x, y) => {
+    const text = [...el.childNodes].filter(nd => nd.nodeType === 3).map(nd => nd.textContent).join('').trim();
+    const fs = num(s.fontSize);
+    if (!text || !fs) return;
+    ctx.setLineDash([]);
+    ctx.fillStyle = s.color || '#1a1a1a';
+    ctx.font = `${s.fontWeight || 'normal'} ${fs * k}px ${s.fontFamily || 'serif'}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if ((s.writingMode || '').startsWith('vertical')) {
+      // 直式落款：一個字一個字往下排（字距＝字大小＋letter-spacing）
+      const ls = num(s.letterSpacing);
+      const cx = x + num(s.width) / 2;
+      [...text].forEach((ch, i) => ctx.fillText(ch, cx * k, (y + i * (fs + ls) + fs / 2) * k));
+    } else if (s.display === 'flex') {
+      ctx.fillText(text, (x + num(s.width) / 2) * k, (y + num(s.height) / 2) * k);
+    } else {
+      ctx.fillText(text, (x + num(s.width) / 2) * k, (y + fs / 2) * k);
+    }
+  };
+
+  const walk = (el, ox, oy) => {
+    for (const child of el.children) {
+      const s = child.style;
+      const x = ox + num(s.left), y = oy + num(s.top);
+      drawBorders(s, x, y);
+      drawText(child, s, x, y);
+      walk(child, x, y);
+    }
+  };
+  walk(tpl.content, 0, 0);
+  return canvas;
+}
+
+// 手機：開分享選單（LINE、訊息、AirDrop、存到照片、列印）；不能分享的瀏覽器改成下載
+async function shareCanvasImage(canvas, filename) {
+  let blob;
+  try {
+    blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('圖片太大或瀏覽器不支援'))), 'image/png'));
+  } catch (e) {
+    toast('產生圖片失敗：' + e.message, 'error');
+    return;
+  }
+  const file = new File([blob], filename, { type: 'image/png' });
+  const url = URL.createObjectURL(blob);
+  const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+  // iPhone 要「按下去當下」才能叫出分享選單，所以圖片先做好，再讓使用者按「分享」
+  openModal('分享／存圖片', `
+    <div style="text-align:center;">
+      <img src="${url}" alt="" style="max-width:100%;max-height:55vh;border:1px solid var(--border);border-radius:4px;" />
+    </div>
+    <div class="tip" style="margin-top:12px;">
+      ${canShare
+        ? '按「📤 分享」可以傳 LINE、訊息、AirDrop、存到照片，或選「列印」用無線印表機印。'
+        : '這個瀏覽器不能直接分享，請按「⬇ 下載圖片」。'}
+      手機上也可以長按圖片 →「加入照片」。<br>
+      ⚠️ 用圖片列印時，印表機可能會縮放；要剛好幾公分，請用頁面上的「🖨️ 列印」。
+    </div>
+    <div class="form-actions">
+      <a class="btn" href="${url}" download="${escapeHTML(filename)}">⬇ 下載圖片</a>
+      ${canShare ? '<button class="primary" id="btn-do-share">📤 分享</button>' : ''}
+    </div>
+  `);
+  const btn = document.getElementById('btn-do-share');
+  if (btn) btn.addEventListener('click', async () => {
+    try {
+      await navigator.share({ files: [file], title: filename.replace(/\.png$/, '') });
+    } catch (e) {
+      if (e.name !== 'AbortError') toast('分享失敗：' + e.message, 'error');
+    }
+  });
+}
+
+function shareGridPaper() {
+  if (!gridPageSize().fits && !confirm('格子比紙張大，圖片會被切掉。還是要產生嗎？')) return;
+  toast('正在產生圖片…');
+  setTimeout(() => {   // 先讓提示顯示出來，再做比較花時間的畫圖
+    const { cellCm, cols, rows, paper } = gridConfig;
+    shareCanvasImage(gridPaperToCanvas(300), `格子紙_${cellCm}公分_${cols}x${rows}_${paper}.png`);
+  }, 30);
+}
+
+function shareSheet() {
+  toast('正在產生圖片…');
+  setTimeout(() => {
+    const r = buildSheetHTML();
+    const head = extractChars(sheetConfig.content || '').slice(0, 6).join('') || '空白';
+    const kind = sheetConfig.type === 'lang' ? '語文競賽' : '4K';
+    shareCanvasImage(sheetHTMLToCanvas(r.html, r.W, r.H, 300), `題目_${kind}_${head}.png`);
+  }, 30);
 }
 
 // =================================================================
