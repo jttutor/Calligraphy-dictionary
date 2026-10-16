@@ -1085,6 +1085,21 @@ function loadGridConfig() {
 function saveGridConfig() {
   localStorage.setItem(GRID_STORAGE_KEY, JSON.stringify(gridConfig));
 }
+// 列印校正（存在這台裝置）：有些手機、平板、印表機列印時會自動放大縮小，
+// 印校正尺量一次，之後列印就把格子反向縮放回正確尺寸。key＝紙張-方向，例如 A4-P、B4-L
+const CALIB_STORAGE_KEY = 'calligraphy-print-calib';
+let printCalib = {};
+function loadPrintCalib() {
+  try { printCalib = JSON.parse(localStorage.getItem(CALIB_STORAGE_KEY) || '{}') || {}; } catch (e) { printCalib = {}; }
+}
+function savePrintCalib() {
+  localStorage.setItem(CALIB_STORAGE_KEY, JSON.stringify(printCalib));
+}
+const calibKey = (paper, landscape) => `${paper}-${landscape ? 'L' : 'P'}`;
+function getPrintCalib(paper, landscape) {
+  const c = printCalib[calibKey(paper, landscape)];
+  return c && c.sx > 0 && c.sy > 0 ? c : { sx: 1, sy: 1 };
+}
 
 // ---------- Storage ----------
 function loadDB() {
@@ -3643,7 +3658,34 @@ function renderGridPaper(app) {
         </div>
       </div>
       <div class="tip" id="grid-info"></div>
-      <div class="tip">🖨️ 列印時：縮放選「<strong>實際大小 / 100%</strong>」、邊界選「<strong>無</strong>」。印好用尺量一格，應該剛好 <strong id="grid-measure">${g.cellCm}</strong> 公分。要最準請用電腦列印，iPad 有時會自動縮小一點。</div>
+      <div class="tip">🖨️ 列印時：印表機的<strong>紙張要跟上面選的一樣</strong>（這裡選 A4 就放 A4 紙；A4 的檔印在 B4 紙上會被放大約 1.2 倍），縮放選「<strong>實際大小 / 100%</strong>」、邊界選「<strong>無</strong>」。印好用尺量一格，應該剛好 <strong id="grid-measure">${g.cellCm}</strong> 公分；不準就用下面的「列印校正」。</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📏 列印校正（印出來尺寸不準時用）</div>
+      <div class="tip">有些手機、平板或印表機列印時會自動放大或縮小（例如 8 公分變 9 公分）。先按「印校正尺」，用尺量上面的橫線和直線，把量到的公分數打進來按「儲存校正」，之後這台裝置用「🖨️ 列印」印格子就會自動修正。每種紙張、直式橫式要各校正一次；換手機、換印表機要重新校正。</div>
+      <div id="calib-status" style="font-size:13px;margin:10px 0;"></div>
+      <div class="sheet-controls">
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="button" id="calib-print">🖨️ 印校正尺</button>
+        </div>
+        <div class="field">
+          <label id="calib-h-label">橫線量到幾公分</label>
+          <input type="number" id="calib-h" min="1" max="60" step="0.01" placeholder="例：20.3" />
+        </div>
+        <div class="field">
+          <label id="calib-v-label">直線量到幾公分</label>
+          <input type="number" id="calib-v" min="1" max="60" step="0.01" placeholder="只量一條也可以" />
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="primary" id="calib-save">儲存校正</button>
+            <button type="button" class="danger" id="calib-clear">清除</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="section">
@@ -3716,6 +3758,10 @@ function renderGridPaper(app) {
     gridConfig.frameGapCm = +v.toFixed(2);
     commit();
   });
+
+  document.getElementById('calib-print').addEventListener('click', printCalibration);
+  document.getElementById('calib-save').addEventListener('click', saveCalibration);
+  document.getElementById('calib-clear').addEventListener('click', clearCalibration);
 
   syncGridControlStates();
   updateGridPreview();
@@ -3855,16 +3901,18 @@ function gridPaperLayers() {
   };
 }
 
-// 整張格子紙（mm 精準）：SVG 畫在紙張正中間
-function buildGridPaperHTML() {
+// 整張格子紙（mm 精準）：SVG 畫在紙張正中間。calib＝列印校正的縮放（只有列印時傳），格子整體反向縮放、仍然置中
+function buildGridPaperHTML(calib) {
   const g = gridPaperLayers();
-  const n = v => +v.toFixed(3);
+  const sx = (calib && calib.sx) || 1, sy = (calib && calib.sy) || 1;
+  const n = v => +v.toFixed(4);
   const shapes = g.layers.map(l =>
     `<path d="${l.d}" fill="none" stroke="${l.color}" stroke-width="${l.w}"`
     + (l.dash ? ` stroke-dasharray="${l.dash.join(' ')}"` : '')
     + '/>'
   ).join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(g.gw)} ${n(g.gh)}" style="position:absolute;left:${n(g.gx)}mm;top:${n(g.gy)}mm;width:${n(g.gw)}mm;height:${n(g.gh)}mm;overflow:visible;">${shapes}</svg>`;
+  const w = g.gw * sx, h = g.gh * sy;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(g.gw)} ${n(g.gh)}" preserveAspectRatio="none" style="position:absolute;left:${n((g.W - w) / 2)}mm;top:${n((g.H - h) / 2)}mm;width:${n(w)}mm;height:${n(h)}mm;overflow:visible;">${shapes}</svg>`;
   const html = `<div class="print-sheet" style="width:${g.W}mm;height:${g.H}mm;overflow:hidden;">${svg}</div>`;
   return {
     html, W: g.W, H: g.H, landscape: g.landscape, fits: g.fits, cell: g.cell,
@@ -3895,6 +3943,7 @@ function updateGridPreview() {
   });
   const measure = document.getElementById('grid-measure');
   if (measure) measure.textContent = cellCm;
+  updateCalibUI();
 
   const info = document.getElementById('grid-info');
   if (info) {
@@ -3926,9 +3975,99 @@ function updateGridPreview() {
 }
 
 function printGridPaper() {
-  const r = buildGridPaperHTML();
-  if (!r.fits && !confirm('格子比紙張大，印出來會被切掉。還是要印嗎？')) return;
+  const calib = getPrintCalib(gridConfig.paper, gridPageSize().landscape);
+  const r = buildGridPaperHTML(calib);
+  const fits = r.tw * calib.sx <= r.W + 0.01 && r.th * calib.sy <= r.H + 0.01;
+  if (!fits && !confirm('格子比紙張大，印出來會被切掉。還是要印嗎？')) return;
   printHTML(r.html, r.W, r.H);
+}
+
+// 校正尺的兩條線多長（mm）：盡量長，量起來誤差比例才小
+function calibLengths(paper, landscape) {
+  const p = PAPERS[paper] || PAPERS.A4;
+  const W = landscape ? p.h : p.w, H = landscape ? p.w : p.h;
+  return { W, H, lh: Math.floor((W - 30) / 10) * 10, lv: Math.floor((H - 75) / 10) * 10 };
+}
+
+// 校正尺：一條橫線、一條直線，每 1 公釐一個刻度；印出來量兩條線的總長
+function buildCalibrationHTML(paper, landscape) {
+  const { W, H, lh, lv } = calibLengths(paper, landscape);
+  const hx = (W - lh) / 2, hy = 45;   // 橫線起點
+  const vx = 25, vy = 65;             // 直線起點
+  const font = "'PingFang TC','Microsoft JhengHei','Heiti TC',sans-serif";
+  const tick = i => (i % 10 === 0 ? 6 : i % 5 === 0 ? 4 : 2.2);
+  let ticks = '';
+  for (let i = 0; i <= lh; i++) ticks += `M${hx + i} ${hy}V${hy - tick(i)}`;
+  for (let i = 0; i <= lv; i++) ticks += `M${vx} ${vy + i}H${vx + tick(i)}`;
+  let s = `<path d="M${hx} ${hy}H${hx + lh}M${vx} ${vy}V${vy + lv}" stroke="#000" stroke-width="0.25" fill="none"/>`;
+  s += `<path d="${ticks}" stroke="#000" stroke-width="0.15" fill="none"/>`;
+  const text = (x, y, size, str, anchor) =>
+    `<text x="${x}" y="${y}" font-size="${size}" font-family="${font}"${anchor ? ` text-anchor="${anchor}"` : ''}>${str}</text>`;
+  for (let i = 0; i <= lh; i += 10) s += text(hx + i, hy - 7.5, 3, i / 10, 'middle');
+  for (let i = 0; i <= lv; i += 10) s += text(vx + 8, vy + i + 1, 3, i / 10);
+  s += text(W / 2, 16, 5.5, `列印校正尺（${paper} ${landscape ? '橫式' : '直式'}）`, 'middle');
+  s += text(W / 2, hy + 10, 4, `橫線從 0 到 ${lh / 10}：應該剛好 ${lh / 10} 公分`, 'middle');
+  const tx = vx + 22;
+  [
+    `直線從 0 到 ${lv / 10}：應該剛好 ${lv / 10} 公分`,
+    '',
+    '用尺量這兩條線的總長，量到公釐（例如 20.3 公分）。',
+    '把量到的數字打回系統：📐 格子 → 列印校正 → 儲存校正。',
+    '之後這台裝置用「🖨️ 列印」印格子，就會自動修正成正確尺寸。',
+    '',
+    '印這張時，紙張要跟系統選的一樣，縮放選「實際大小 / 100%」。',
+  ].forEach((line, i) => { if (line) s += text(tx, vy + 20 + i * 8, 4, line); });
+  const html = `<div class="print-sheet" style="width:${W}mm;height:${H}mm;overflow:hidden;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" style="position:absolute;left:0;top:0;width:${W}mm;height:${H}mm;">${s}</svg></div>`;
+  return { html, W, H, lh, lv };
+}
+
+function printCalibration() {
+  const r = buildCalibrationHTML(gridConfig.paper, gridPageSize().landscape);
+  printHTML(r.html, r.W, r.H);
+}
+
+// 校正區塊：顯示目前紙張／方向的校正狀態與兩條線應該多長
+function updateCalibUI() {
+  const status = document.getElementById('calib-status');
+  if (!status) return;
+  const { landscape } = gridPageSize();
+  const { lh, lv } = calibLengths(gridConfig.paper, landscape);
+  const where = `${gridConfig.paper} ${landscape ? '橫式' : '直式'}`;
+  document.getElementById('calib-h-label').textContent = `橫線量到幾公分（應該是 ${lh / 10}）`;
+  document.getElementById('calib-v-label').textContent = `直線量到幾公分（應該是 ${lv / 10}）`;
+  const c = printCalib[calibKey(gridConfig.paper, landscape)];
+  const pct = v => `${+(v * 100).toFixed(1)}%`;
+  status.innerHTML = c
+    ? `✅ <strong>${where}</strong> 已校正（${escapeHTML(c.at || '')}）：這台裝置原本印出來是 橫 ${pct(1 / c.sx)}、直 ${pct(1 / c.sy)}，用「🖨️ 列印」時會自動修正。`
+    : `<strong>${where}</strong> 還沒校正，目前照原尺寸送去列印。`;
+}
+
+function saveCalibration() {
+  const { landscape } = gridPageSize();
+  const { lh, lv } = calibLengths(gridConfig.paper, landscape);
+  let mh = parseFloat(document.getElementById('calib-h').value);
+  let mv = parseFloat(document.getElementById('calib-v').value);
+  // 只量一條也可以：兩個方向用同一個比例
+  if (!(mh > 0) && mv > 0) mh = mv * lh / lv;
+  if (!(mv > 0) && mh > 0) mv = mh * lv / lh;
+  if (!(mh > 0) || !(mv > 0)) { toast('請輸入量到的公分數', 'error'); return; }
+  const rh = mh * 10 / lh, rv = mv * 10 / lv;   // 實際印出來／應該的長度
+  if ((rh < 0.7 || rh > 1.4 || rv < 0.7 || rv > 1.4)
+    && !confirm('量到的長度跟應該的差很多，確定沒有量錯，或沒有選錯紙張嗎？')) return;
+  printCalib[calibKey(gridConfig.paper, landscape)] = {
+    sx: +(1 / rh).toFixed(5), sy: +(1 / rv).toFixed(5), measuredH: mh, measuredV: mv, at: todayISO(),
+  };
+  savePrintCalib();
+  toast('已儲存校正，之後列印會自動修正', 'success');
+  updateCalibUI();
+}
+
+function clearCalibration() {
+  const { landscape } = gridPageSize();
+  delete printCalib[calibKey(gridConfig.paper, landscape)];
+  savePrintCalib();
+  toast('已清除這種紙張的校正', 'success');
+  updateCalibUI();
 }
 
 // =================================================================
@@ -3941,10 +4080,48 @@ function makeSheetCanvas(wMm, hMm, dpi = 300) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(inW * d);
   canvas.height = Math.round(inH * d);
+  canvas.dataset.dpi = d;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   return { canvas, ctx, k: d / 25.4 };   // k：每公釐幾個像素
+}
+
+// PNG 寫入解析度（pHYs）：電腦用「實際大小」印圖片時才會是正確的公分數
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+async function pngWithDpi(blob, dpi) {
+  const bytes = insertPngDpi(new Uint8Array(await blob.arrayBuffer()), dpi);
+  return new Blob([bytes], { type: 'image/png' });
+}
+function insertPngDpi(src, dpi) {
+  const ppm = Math.round(dpi / 0.0254);   // 每公尺幾點
+  const chunk = new Uint8Array(21);       // 長度 4＋類型 4＋資料 9＋CRC 4
+  const dv = new DataView(chunk.buffer);
+  dv.setUint32(0, 9);
+  chunk.set([0x70, 0x48, 0x59, 0x73], 4); // 'pHYs'
+  dv.setUint32(8, ppm);
+  dv.setUint32(12, ppm);
+  chunk[16] = 1;                          // 單位：公尺
+  dv.setUint32(17, crc32(chunk.subarray(4, 17)));
+  const at = 33;                          // PNG 檔頭 8＋IHDR 25：插在 IHDR 後面
+  const out = new Uint8Array(src.length + chunk.length);
+  out.set(src.subarray(0, at), 0);
+  out.set(chunk, at);
+  out.set(src.subarray(at), at + chunk.length);
+  return out;
 }
 
 function gridPaperToCanvas(dpi) {
@@ -4034,6 +4211,7 @@ async function shareCanvasImage(canvas, filename) {
   try {
     blob = await new Promise((resolve, reject) =>
       canvas.toBlob(b => (b ? resolve(b) : reject(new Error('圖片太大或瀏覽器不支援'))), 'image/png'));
+    blob = await pngWithDpi(blob, parseFloat(canvas.dataset.dpi) || 300);
   } catch (e) {
     toast('產生圖片失敗：' + e.message, 'error');
     return;
@@ -4383,6 +4561,7 @@ function init() {
   loadApiConfig();
   loadSheetConfig();
   loadGridConfig();
+  loadPrintCalib();
 
   // Tab bindings
   document.querySelectorAll('.tab').forEach(t => {
